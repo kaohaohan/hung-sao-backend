@@ -1,0 +1,30 @@
+# 依賴套件
+node_modules/
+
+# 環境變數（敏感資訊！）
+.env
+.env.local
+.env.*.local
+
+# 日誌檔案
+logs/
+*.log
+npm-debug.log*
+
+# 作業系統產生的檔案
+.DS_Store
+Thumbs.db
+
+# IDE 設定
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 測試覆蓋率
+coverage/
+
+# Build 產物
+dist/
+build/
+
