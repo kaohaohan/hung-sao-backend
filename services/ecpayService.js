@@ -19,14 +19,13 @@ const ecpay_payment = require("ecpay_aio_nodejs");
 // 🎓 從環境變數讀取的設定 白話 設定身份證
 //有點像mongo 把資料庫連線key
 const options = {
-  OperationMode: "Test", // Test: 測試環境
+  OperationMode: "Test",
   MercProfile: {
     MerchantID: process.env.ECPAY_MERCHANT_ID,
     HashKey: process.env.ECPAY_HASH_KEY,
     HashIV: process.env.ECPAY_HASH_IV,
   },
-  IsProjectContractor: false,
-  IgnorePayment: [], // 不忽略任何付款方式
+  IgnorePayment: [],
   IsProjectContractor: false,
 };
 
@@ -37,12 +36,13 @@ async function createPayment(orderData) {
   const base_param = {
     MerchantTradeNo: orderData.orderId,
     MerchantTradeDate: dateStr,
-    TotalAmount: orderData.amount,
+    TotalAmount: String(orderData.amount),
     TradeDesc: "Order",
-    ItemName: orderData.description,
-    ReturnURL: process.env.ECPAY_NOTIFY_URL,
-    ClientBackURL: process.env.ECPAY_RETURN_URL,
+    ItemName: "Product",
+    ReturnURL: process.env.ECPAY_WEBHOOK_URL, // Webhook（後端）
+    ClientBackURL: process.env.ECPAY_FRONTEND_RETURN_URL, // 前端返回頁面
     ChoosePayment: "ALL",
+    PaymentType: "aio", // ← 加上這行！
     EncryptType: 1,
   };
 
