@@ -4,7 +4,7 @@ const orderService = require("../services/orderService");
 async function createOrder(req, res) {
   try {
     // 1. 接收前端資料（items, customerInfo）
-    const { items, customerInfo } = req.body;
+    const { items, customerInfo, pickupDate } = req.body;
 
     // 2. 計算總金額和每個商品的小計
     const itemsWithSubtotal = items.map((item) => ({
@@ -27,11 +27,12 @@ async function createOrder(req, res) {
       status: "pending", // 初始狀態：待付款
       items: itemsWithSubtotal,
       customerInfo: customerInfo,
+      pickupDate: pickupDate,
     };
 
     // 5. 存入 MongoDB
     const savedOrder = await orderService.createOrder(orderData);
-    console.log("✅ 訂單已存入資料庫:", savedOrder.orderId);
+    console.log(" 訂單已存入資料庫:", savedOrder.orderId);
 
     // 6. 呼叫綠界創建付款
     const paymentData = {

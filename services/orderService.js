@@ -21,6 +21,16 @@ const orderSchema = new mongoose.Schema({
     enum: ["pending", "paid", "failed", "cancelled"],
     default: "pending",
   },
+  // 新增：物流單號（黑貓回傳）
+  trackingNumber: {
+    type: String,
+  },
+
+  //取貨日期（對應 10 天備貨規則）
+  pickupDate: {
+    type: Date,
+    required: true,
+  },
 
   // 商品列表（嵌套陣列）
   items: [
@@ -116,9 +126,21 @@ async function updateOrderStatus(orderId, status, paymentInfo) {
   }
 }
 
+async function shipOrder(orderId, trackingNumber) {
+  return await Order.findOneAndUpdate(
+    { orderId },
+    {
+      status: "shipped",
+      trackingNumber: trackingNumber || null,
+      updatedAt: Date.now(),
+    },
+    { new: true }
+  );
+}
 module.exports = {
   Order,
   createOrder,
   getOrderById,
   updateOrderStatus,
+  shipOrder,
 };
