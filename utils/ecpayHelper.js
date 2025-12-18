@@ -2,7 +2,8 @@
 const crypto = require("crypto");
 
 /**
- * 驗證綠界的簽章
+ * 簡單來說 綠界-> webhook 給我
+ * 如果回傳一樣簽章 => 資料沒被串改 如果不一樣 拒絕
  */
 function verifyCheckMacValue(data, hashKey, hashIV) {
   // Step 1: 取出綠界傳來的簽章
@@ -57,6 +58,42 @@ function verifyCheckMacValue(data, hashKey, hashIV) {
   return receivedCheckMacValue === myCheckMacValue;
 }
 
+//做一個產生綠界的簽章 物流用
+// 現在有一包param->他還沒有CheckMacValue
+// 要自己算一個簽章 放進params 裡
+//把簽章 ->給綠界 一樣看驗證我的簽章->通過才處理
+function generateCheckMacValue(params, hashKey, hashIV) {
+  //1) 把 params 按字母排序。
+  const sortParams = Object.keys(params).sort();
+  //2) 組成 key1=value1&key2=value2 字串。
+  let checkStr = sortParams
+    .map((key) => `${key}=${params[key]}`) // ← 用 key 去 params 裡取值
+    .join("&");
+  //3) 前後加 HashKey 和 HashIV。
+  checkStr = `HashKey=${hashKey}&${checkStr}&HashIV=${hashIV}`;
+  //4) URL encode → 轉小寫 → 還原特殊字元。
+  checkStr = encodeURIComponent(checkStr);
+  //5) SHA256 加密 → 轉大寫。
+  checkStr = checkStr.toLowerCase();
+  checkStr = checkStr
+    .replace(/%2d/g, "-")
+    .replace(/%5f/g, "_")
+    .replace(/%2e/g, ".")
+    .replace(/%21/g, "!")
+    .replace(/%2a/g, "*")
+    .replace(/%28/g, "(")
+    .replace(/%29/g, ")")
+    .replace(/%20/g, "+");
+  // 6)): TODO - SHA256 加密
+  const hash = crypto.createHash("sha256");
+  hash.update(checkStr);
+  const myCheckMacValue = hash.digest("hex").toUpperCase();
+
+  //) 回傳簽章字串。
+  return myCheckMacValue;
+}
+
 module.exports = {
   verifyCheckMacValue,
+  generateCheckMacValue,
 };

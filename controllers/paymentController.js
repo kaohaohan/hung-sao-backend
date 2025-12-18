@@ -10,7 +10,7 @@ async function receivePaymentNotify(req, res) {
     process.env.ECPAY_HASH_IV
   );
   if (!isValid) {
-    console.log("❌ 簽章驗證失敗！");
+    console.log(" 簽章驗證失敗！");
     return res.send("0|CheckMacValue Error");
   }
 

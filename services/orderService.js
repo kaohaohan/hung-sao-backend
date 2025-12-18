@@ -10,20 +10,39 @@ const orderSchema = new mongoose.Schema({
   },
 
   // 金額
+  //加上驗證 不能給負數or 0
   amount: {
     type: Number,
     required: true,
+    min: 1,
   },
 
   // 訂單狀態
-  status: {
+  paymentStatus: {
     type: String,
-    enum: ["pending", "paid", "failed", "cancelled"],
+    enum: ["pending", "paid", "failed"],
     default: "pending",
   },
-  // 新增：物流單號（黑貓回傳）
+  logisticsStatus: {
+    type: String,
+    enum: ["unshipped", "shipping"],
+    default: "unshipped",
+  },
+  // 綠界交易編號（對帳用）
+  tradeNo: {
+    type: String,
+  },
+  // 黑貓託運單號（物流用）
   trackingNumber: {
     type: String,
+  },
+  allPayLogisticsID: {
+    type: String,
+  },
+  logisticsOptions: {
+    type: { type: String, default: "HOME" },
+    subType: { type: String, default: "TCAT" },
+    temperature: { type: String, default: "0003" },
   },
 
   //取貨日期（對應 10 天備貨規則）
@@ -31,11 +50,18 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     required: true,
   },
+  deliveryDate: {
+    type: Date,
+    required: true,
+  },
 
   // 商品列表（嵌套陣列）
   items: [
     {
-      itemId: String,
+      itemId: {
+        type: String,
+        required: true,
+      },
       name: {
         type: String,
         required: true,
@@ -43,10 +69,12 @@ const orderSchema = new mongoose.Schema({
       price: {
         type: Number,
         required: true,
+        min: 1,
       },
       quantity: {
         type: Number,
         required: true,
+        min: 1,
       },
       subtotal: Number,
       note: String, // 備註（例如：不要香菜）
@@ -62,9 +90,10 @@ const orderSchema = new mongoose.Schema({
     phone: {
       type: String,
       required: true,
+      match: /^09\d{8}$/,
     },
     email: String,
-    address: String,
+    address: { type: String, required: true },
   },
 
   // 付款訊息（綠界回傳後更新）
@@ -85,7 +114,24 @@ const orderSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
-
+// pre("save") 要放在mongoose.model一前註冊
+// 在儲存前統一計算每項小計與訂單總額，避免信任前端金額
+orderSchema.pre("save", function (next) {
+  if (Array.isArray(this.items)) {
+    this.items = this.items.map((item) => {
+      if (item && item.price != null && item.quantity != null) {
+        item.subtotal = item.price * item.quantity;
+      }
+      return item;
+    });
+    const total = this.items.reduce(
+      (sum, item) => sum + (item.subtotal || 0),
+      0
+    );
+    this.amount = total;
+  }
+  next();
+});
 // 建立模型
 const Order = mongoose.model("Order", orderSchema);
 
@@ -110,12 +156,12 @@ async function getOrderById(orderId) {
 }
 
 // 更新訂單狀態（付款成功後呼叫）
-async function updateOrderStatus(orderId, status, paymentInfo) {
+async function updateOrderStatus(orderId, paymentStatus, paymentInfo) {
   try {
     return await Order.findOneAndUpdate(
       { orderId },
       {
-        status,
+        paymentStatus,
         paymentInfo,
         updatedAt: Date.now(),
       },
@@ -130,9 +176,9 @@ async function shipOrder(orderId, trackingNumber) {
   return await Order.findOneAndUpdate(
     { orderId },
     {
-      status: "shipped",
-      trackingNumber: trackingNumber || null,
-      updatedAt: Date.now(),
+      logisticsStatus: "shipping",
+      trackingNumber: trackingNumber || null, //沒傳就設 null
+      updatedAt: Date.now(), //回傳「更新後」的 document，而不是「更新前」的那一筆。
     },
     { new: true }
   );

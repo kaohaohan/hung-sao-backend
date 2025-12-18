@@ -3,8 +3,31 @@ const orderService = require("../services/orderService");
 
 async function createOrder(req, res) {
   try {
-    // 1. 接收前端資料（items, customerInfo）
-    const { items, customerInfo, pickupDate } = req.body;
+    // 1. 接收前端資料（items, customerInfo...其他的）
+    const {
+      items,
+      customerInfo,
+      pickupDate,
+      deliveryDate,
+      logisticsOptions = {
+        type: "HOME",
+        subType: "TCAT",
+        temperature: "0003",
+      },
+    } = req.body;
+    //1.5  檢查 customerInfo
+    if (
+      !customerInfo ||
+      !customerInfo.name ||
+      !customerInfo.phone ||
+      !customerInfo.address
+    ) {
+      return res.status(400).json({ error: "Missing customer fields" });
+    }
+    //檢查 deliveryDate 是否合法日期。
+    if (!deliveryDate || Number.isNaN(Date.parse(deliveryDate))) {
+      return res.status(400).json({ error: "Invalid deliveryDate" });
+    }
 
     // 2. 計算總金額和每個商品的小計
     const itemsWithSubtotal = items.map((item) => ({
@@ -22,12 +45,19 @@ async function createOrder(req, res) {
 
     // 4. 準備訂單數據
     const orderData = {
-      orderId: orderId,
+      orderId,
       amount: total,
-      status: "pending", // 初始狀態：待付款
+      paymentStatus: "pending", // 改用 paymentStatus
+      logisticsStatus: "unshipped", // 補上物流狀態
       items: itemsWithSubtotal,
-      customerInfo: customerInfo,
-      pickupDate: pickupDate,
+      customerInfo,
+      pickupDate,
+      deliveryDate, // 新增
+      logisticsOptions: logisticsOptions || {
+        type: "HOME",
+        subType: "TCAT",
+        temperature: "0003",
+      }, // 新增
     };
 
     // 5. 存入 MongoDB

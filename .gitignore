@@ -28,3 +28,5 @@ coverage/
 dist/
 build/
 
+test-payment.html
+tmp-npm-cache/
