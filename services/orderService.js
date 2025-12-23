@@ -215,11 +215,9 @@ async function updateOrderStatus(
       updatePayload.paymentMethod = paymentMethod;
     }
 
-    return await Order.findOneAndUpdate(
-      { orderId },
-      updatePayload,
-      { new: true }
-    );
+    return await Order.findOneAndUpdate({ orderId }, updatePayload, {
+      new: true,
+    });
   } catch (error) {
     throw new Error(`更新訂單失敗: ${error.message}`);
   }
