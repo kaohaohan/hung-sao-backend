@@ -39,8 +39,13 @@ app.use(paymentRoutes);
 
 // Metrics 端點（放在路由之後）
 app.get("/metrics", async (req, res) => {
-  res.set("Content-Type", register.contentType);
-  res.end(await register.metrics());
+  try {
+    res.set("Content-Type", register.contentType);
+    res.end(await register.metrics());
+  } catch (error) {
+    console.error("Metrics error:", error);
+    res.status(500).send("Metrics unavailable");
+  }
 });
 
 // 只在非 Vercel 環境下啟動伺服器（本地開發用）
