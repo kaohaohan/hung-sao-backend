@@ -36,10 +36,23 @@ async function receivePaymentNotify(req, res) {
     CheckMacValue: req.body.CheckMacValue, // 驗證碼
   };
 
+  // 依綠界 PaymentType 對應成我們的 paymentMethod，給前端好顯示
+  const mapPaymentMethod = (paymentTypeRaw) => {
+    if (!paymentTypeRaw) return null;
+    const t = paymentTypeRaw.toLowerCase();
+    if (t.startsWith("credit")) return "CREDIT_CARD"; // 含 Apple/Google Pay 也會帶 credit 開頭
+    if (t.startsWith("atm")) return "ATM";
+    if (t.startsWith("cvs")) return "CVS";
+    if (t.startsWith("barcode")) return "BARCODE";
+    return "UNKNOWN";
+  };
+  const paymentMethod = mapPaymentMethod(req.body.PaymentType);
+
   const updatedOrder = await orderService.updateOrderStatus(
     orderId, // 訂單號
     "paid", // 新狀態（注意引號！）
-    paymentInfo // 付款訊息物件
+    paymentInfo, // 付款訊息物件
+    paymentMethod // 付款方式 (自動對應)
   );
   console.log("✅ 訂單已經更新:", updatedOrder);
   res.send("1|OK");

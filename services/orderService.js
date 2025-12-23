@@ -41,6 +41,23 @@ const orderSchema = new mongoose.Schema({
     default: "unshipped",
   },
 
+  // 前端選擇的付款方式 (CREDIT_CARD / COD)，以及後續由 webhook 對應的實際通道
+  paymentMethod: {
+    type: String,
+    enum: [
+      "CREDIT_CARD",
+      "COD",
+      "ATM",
+      "CVS",
+      "BARCODE",
+      "APPLE_PAY",
+      "GOOGLE_PAY",
+      "UNKNOWN",
+      null,
+    ],
+    default: null,
+  },
+
   // ==========================================
   // 4. 顧客與商品 (Customer & Items)
   // ==========================================
@@ -181,15 +198,26 @@ async function getOrderById(orderId) {
 }
 
 // 更新訂單狀態（付款成功後呼叫）
-async function updateOrderStatus(orderId, paymentStatus, paymentInfo) {
+async function updateOrderStatus(
+  orderId,
+  paymentStatus,
+  paymentInfo,
+  paymentMethod = null
+) {
   try {
+    const updatePayload = {
+      paymentStatus,
+      paymentInfo,
+      updatedAt: Date.now(),
+    };
+
+    if (paymentMethod) {
+      updatePayload.paymentMethod = paymentMethod;
+    }
+
     return await Order.findOneAndUpdate(
       { orderId },
-      {
-        paymentStatus,
-        paymentInfo,
-        updatedAt: Date.now(),
-      },
+      updatePayload,
       { new: true }
     );
   } catch (error) {

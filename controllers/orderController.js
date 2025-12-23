@@ -77,6 +77,9 @@ async function createOrder(req, res) {
 
       logisticsOptions: logisticsOptions,
 
+      // 儲存使用者在下單時選的付款方式（CREDIT_CARD / COD）
+      paymentMethod: paymentMethod || null,
+
       // paymentInfo 等綠界付款成功後，webhook 才會填入
       // 不要在這裡先填，因為用戶還沒真正付款
     };
