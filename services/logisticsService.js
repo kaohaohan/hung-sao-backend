@@ -1,40 +1,146 @@
-const axios = require("axios");
-const ecpayHelper = require("../utils/ecpayHelper");
-const moment = require("moment");
-const dateStr = moment().format("YYYY/MM/DD HH:mm:ss");
-async function createShipment(orderData) {
-  //要傳orderData -> , MerchantTradeDate,GoodsAmount,GoodsName
-  //物流方式 orderData -> LogisticsType, LogisticsSubType, IsCollection,Temperature
-  //收件人資訊 orderData.customerInfo
-  //寄件人(店家,電話) ,商家資訊, 回傳網址在.env
+// services/logisticsService.js
+// 黑貓宅配直連 API
 
-  //param
-  const params = {
-    MerchantID: process.env.ECPAY_MERCHANT_ID,
-    MerchantTradeNo: orderData.orderId,
-    MerchantTradeDate: dateStr, //不確定
-    GoodsAmount: orderData.amount,
-    GoodsName: orderData.items[0].name,
-    LogisticsType: orderData.logisticsOptions.type,
-    LogisticsSubType: orderData.logisticsOptions.subType,
-    Temperature: orderData.logisticsOptions.temperature,
-    IsCollection: "N",
-    ReceiverName: orderData.customerInfo.name,
-    ReceiverCellPhone: orderData.customerInfo.phone,
-    ReceiverAddress: orderData.customerInfo.address,
-    ReceiverZipCode: "100", //暫時
-    SenderName: process.env.SENDER_NAME,
-    SenderCellPhone: process.env.SENDER_PHONE,
-    ServerReplyURL: process.env.ECPAY_LOGISTICS_REPLY_URL,
-    SenderAddress: process.env.SENDER_ADDRESS,
+const axios = require("axios");
+const moment = require("moment");
+
+/**
+ * 查詢郵號 (呼叫黑貓 ParsingAddress API)
+ * @param {string} address - 要查詢的地址
+ * @returns {string} 6 碼郵號
+ */
+async function getZipCode(address) {
+  const payload = {
+    CustomerId: process.env.TCAT_CUSTOMER_ID,
+    CustomerToken: process.env.TCAT_CUSTOMER_TOKEN,
+    PostType: "01",
+    Addresses: [{ Search: address }],
   };
 
-  //簽章
-  params.CheckMacValue = ecpayHelper.generateCheckMacValue(
-    params,
-    process.env.ECPAY_HASH_KEY,
-    process.env.ECPAY_HASH_IV
+  const response = await axios.post(
+    `${process.env.TCAT_API_URL}/ParsingAddress`,
+    payload
   );
 
-  //api
+  const result = response.data;
+  console.log("查詢郵號結果:", JSON.stringify(result));
+
+  if (result.IsOK === "Y" && result.Data?.Addresses?.length > 0) {
+    const rawPostNum = result.Data.Addresses[0].PostNumber;
+    const zipCode = rawPostNum.replace(/-/g, "").slice(-6);
+    console.log(`✅ 查詢郵號成功: ${address} → ${zipCode}`);
+    return zipCode;
+  } else {
+    throw new Error(`查詢郵號失敗: ${result.Message}`);
+  }
 }
+
+/**
+ * 建立託運單 (呼叫黑貓 PrintOBT API)
+ * @param {Object} orderData - 訂單資料
+ * @returns {Object} { success, obtNumber, pdfLink } 或 { success, message }
+ */
+async function createShipment(orderData) {
+  try {
+    console.log(`🚚 訂單 ${orderData.orderId} 準備向黑貓下單...`);
+
+    // 1. 查寄件人的郵號
+    const senderZip = await getZipCode(process.env.TCAT_SENDER_ADDRESS);
+
+    // 2. 準備日期
+    const shipmentDate = moment().add(1, "days").format("YYYYMMDD");
+    const deliveryDate = orderData.deliveryDate
+      ? moment(orderData.deliveryDate).format("YYYYMMDD")
+      : moment().add(2, "days").format("YYYYMMDD");
+
+    // 3. 組裝 Payload (對照規格書 2.2.1)
+    const payload = {
+      CustomerId: process.env.TCAT_CUSTOMER_ID,
+      CustomerToken: process.env.TCAT_CUSTOMER_TOKEN,
+      PrintType: "01",
+      PrintOBTType: "01",
+      Orders: [
+        {
+          OBTNumber: "",
+          OrderId: orderData.orderId,
+          Thermosphere: "0002", // 冷藏
+          Spec: "0001", // 60cm
+          ReceiptLocation: "01", // 到宅
+          ReceiptStationNo: "", // 到宅時填空白
+
+          // 收件人 (客人)
+          RecipientName: orderData.customerInfo.name,
+          RecipientTel: "",
+          RecipientMobile: orderData.customerInfo.phone,
+          RecipientAddress: orderData.customerInfo.address,
+
+          // 寄件人 (店家)
+          SenderName: process.env.TCAT_SENDER_NAME,
+          SenderTel: process.env.TCAT_SENDER_PHONE, // 市話
+          SenderMobile: "", // 沒有手機就留空
+          SenderZipCode: senderZip,
+          SenderAddress: process.env.TCAT_SENDER_ADDRESS,
+
+          // 時間
+          ShipmentDate: shipmentDate,
+          DeliveryDate: deliveryDate,
+          DeliveryTime: "04", // 不指定
+
+          // 金流 (已用綠界付款，不需代收)
+          IsFreight: "N",
+          IsCollection: "N",
+          CollectionAmount: 0,
+          IsSwipe: "N",
+          IsMobilePay: "N",
+          IsDeclare: "N",
+          DeclareAmount: 0,
+
+          // 商品
+          ProductTypeId: "0001",
+          ProductName: "紅燒羊肉麵冷藏組",
+          Memo: "冷藏食品，請盡速冰存",
+        },
+      ],
+    };
+
+    // 4. 打 API
+    console.log("🚀 正在發送請求給黑貓...");
+    console.log("📦 發送的 Payload:", JSON.stringify(payload, null, 2));
+    const response = await axios.post(
+      `${process.env.TCAT_API_URL}/PrintOBT`,
+      payload
+    );
+
+    // 5. 處理回傳
+    const result = response.data;
+    console.log("黑貓回傳:", JSON.stringify(result, null, 2));
+
+    if (result.IsOK === "Y") {
+      const orderResult = result.Data.Orders[0];
+      const fileNo = result.Data.FileNo;
+
+      console.log(`🎉 成功！託運單號: ${orderResult.OBTNumber}`);
+
+      return {
+        success: true,
+        obtNumber: orderResult.OBTNumber,
+        fileNo: fileNo,
+        pdfLink: `https://egs.suda.com.tw/PDF/Download/${fileNo}`,
+      };
+    } else {
+      console.error(`❌ 黑貓拒絕: ${result.Message}`);
+      return {
+        success: false,
+        message: result.Message,
+      };
+    }
+  } catch (error) {
+    console.error(`❌ 系統錯誤: ${error.message}`);
+    return { success: false, message: error.message };
+  }
+}
+
+module.exports = {
+  getZipCode,
+  createShipment,
+};

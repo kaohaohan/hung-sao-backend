@@ -1,134 +1,159 @@
 const mongoose = require("mongoose");
 
-// 訂單 Schema 設計
 const orderSchema = new mongoose.Schema({
-  // 訂單基本資訊
+  // ==========================================
+  // 1. 訂單核心識別 (Core Identity)
+  // ==========================================
   orderId: {
     type: String,
     required: true,
-    unique: true,
+    unique: true, // 例如: ORD1734928374
   },
 
-  // 金額
-  //加上驗證 不能給負數or 0
+  // ==========================================
+  // 2. 金額計算 (Accounting) - 你的帳本
+  // ==========================================
+  subtotal: {
+    type: Number,
+    default: 0, // 商品小計 (麵錢)
+  },
+  shippingFee: {
+    type: Number,
+    default: 0, // 運費 (根據材積或設定計算)
+  },
   amount: {
     type: Number,
     required: true,
-    min: 1,
+    min: 1, // 總金額 (綠界實際要收的錢 = subtotal + shippingFee)
   },
 
-  // 訂單狀態
+  // ==========================================
+  // 3. 狀態管理 (Status Flags)
+  // ==========================================
   paymentStatus: {
     type: String,
-    enum: ["pending", "paid", "failed"],
+    enum: ["pending", "paid", "failed"], // 待付款, 已付款, 失敗
     default: "pending",
   },
   logisticsStatus: {
     type: String,
-    enum: ["unshipped", "shipping"],
+    enum: ["unshipped", "shipping", "shipped", "arrived"], // 備貨中, 配送中, 已出貨, 已送達
     default: "unshipped",
   },
-  // 綠界交易編號（對帳用）
-  tradeNo: {
-    type: String,
+
+  // ==========================================
+  // 4. 顧客與商品 (Customer & Items)
+  // ==========================================
+  customerInfo: {
+    name: { type: String, required: true },
+    phone: { type: String, required: true, match: /^09\d{8}$/ },
+    email: String,
+    address: { type: String, required: true },
   },
-  // 黑貓託運單號（物流用）
-  trackingNumber: {
-    type: String,
-  },
-  allPayLogisticsID: {
-    type: String,
-  },
+  items: [
+    {
+      itemId: { type: String, required: true },
+      name: { type: String, required: true },
+      price: { type: Number, required: true },
+      quantity: { type: Number, required: true },
+      subtotal: Number,
+      note: String,
+    },
+  ],
+
+  // ==========================================
+  // 5. 黑貓物流設定 (Black Cat / TCAT Config)
+  // 這裡存的是「你要怎麼寄」以及「客人想什麼時候收」
+  // ==========================================
   logisticsOptions: {
+    // 物流類型 (預設黑貓宅配)
     type: { type: String, default: "HOME" },
     subType: { type: String, default: "TCAT" },
-    temperature: { type: String, default: "0003" },
+
+    // 🔥 溫層設定 (重要：0002 代表冷藏)
+    temperature: {
+      type: String,
+      default: "0002",
+      enum: ["0001", "0002", "0003"], // 常溫, 冷藏, 冷凍
+    },
+
+    // 🔥 配送時段 (客人選的)
+    // 對應黑貓代碼: 1(13前), 2(14-18), 4(不指定)
+    deliveryTime: {
+      type: String,
+      default: "anytime",
+      enum: ["anytime", "before_13", "14_18"],
+    },
   },
 
-  //取貨日期（對應 10 天備貨規則）
+  // 🚚 日期設定 (獨立出來比較好查詢)
+  // 給黑貓：你要司機哪一天來你店裡收貨？ (通常是 T+1 明天)
   pickupDate: {
     type: Date,
     required: true,
   },
+  // 給黑貓：客人希望哪一天收到？
   deliveryDate: {
     type: Date,
     required: true,
   },
 
-  // 商品列表（嵌套陣列）
-  items: [
-    {
-      itemId: {
-        type: String,
-        required: true,
-      },
-      name: {
-        type: String,
-        required: true,
-      },
-      price: {
-        type: Number,
-        required: true,
-        min: 1,
-      },
-      quantity: {
-        type: Number,
-        required: true,
-        min: 1,
-      },
-      subtotal: Number,
-      note: String, // 備註（例如：不要香菜）
-    },
-  ],
-
-  // 客戶資訊（嵌套物件）
-  customerInfo: {
-    name: {
-      type: String,
-      required: true,
-    },
-    phone: {
-      type: String,
-      required: true,
-      match: /^09\d{8}$/,
-    },
-    email: String,
-    address: { type: String, required: true },
-  },
-
-  // 付款訊息（綠界回傳後更新）
+  // ==========================================
+  // 6. 綠界金流回傳 (Green World / ECPay Response)
+  // 當綠界通知我們付款成功時，更新這裡
+  // ==========================================
   paymentInfo: {
-    TradeNo: String, // 綠界交易編號
-    PaymentType: String, // 付款方式
-    PaymentDate: Date, // 付款時間
-    CheckMacValue: String, // 驗證碼
+    TradeNo: String, // 綠界交易編號（保持綠界原始欄位名）
+    PaymentType: String, // 付款方式（保持綠界原始欄位名）
+    PaymentDate: Date, // 付款時間（保持綠界原始欄位名）
+    CheckMacValue: String, // 檢查碼（保持綠界原始欄位名）
   },
 
-  // 時間戳
-  createdAt: {
-    type: Date,
-    default: Date.now,
+  // ==========================================
+  // 7. 黑貓物流回傳 (Logistics Provider Response)
+  // 當物流訂單建立成功後，回填這裡
+  // ==========================================
+  logisticsInfo: {
+    trackingNumber: String, // 託運單號 (最重要的！印在單子上的號碼)
+    rtnCode: String, // 物流介接回傳碼
+    rtnMsg: String, // 物流訊息
+    allPayLogisticsID: String, // 綠界物流訂單編號 (如果透過綠界串黑貓才有)
+    cvsPaymentNo: String, // 寄貨編號 (C2C常用，宅配較少用)
+    bookingNote: String, // 託運單下載連結 (HTML/PDF)
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
+
+  // ==========================================
+  // 8. 系統時間
+  // ==========================================
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 // pre("save") 要放在mongoose.model一前註冊
 // 在儲存前統一計算每項小計與訂單總額，避免信任前端金額
 orderSchema.pre("save", function (next) {
-  if (Array.isArray(this.items)) {
-    this.items = this.items.map((item) => {
-      if (item && item.price != null && item.quantity != null) {
-        item.subtotal = item.price * item.quantity;
-      }
-      return item;
-    });
-    const total = this.items.reduce(
-      (sum, item) => sum + (item.subtotal || 0),
-      0
-    );
-    this.amount = total;
+  // 只有當 items 有變動或是新訂單時才重算，節省效能
+  if (this.isModified("items") || this.isNew) {
+    if (Array.isArray(this.items)) {
+      // A. 重算每項商品的 subtotal
+      this.items = this.items.map((item) => {
+        if (item && item.price != null && item.quantity != null) {
+          item.subtotal = item.price * item.quantity;
+        }
+        return item;
+      });
+
+      // B. 計算商品總小計 (Subtotal)
+      const itemTotal = this.items.reduce(
+        (sum, item) => sum + (item.subtotal || 0),
+        0
+      );
+      this.subtotal = itemTotal; // 存入資料庫，方便以後查帳
+
+      // C. 【關鍵修改】總金額 = 商品小計 + 運費
+      // 確保 shippingFee 有值，沒有就當 0
+      const shipping = this.shippingFee || 0;
+      this.amount = this.subtotal + shipping;
+    }
   }
   next();
 });
@@ -172,16 +197,24 @@ async function updateOrderStatus(orderId, paymentStatus, paymentInfo) {
   }
 }
 
-async function shipOrder(orderId, trackingNumber) {
-  return await Order.findOneAndUpdate(
-    { orderId },
-    {
-      logisticsStatus: "shipping",
-      trackingNumber: trackingNumber || null, //沒傳就設 null
-      updatedAt: Date.now(), //回傳「更新後」的 document，而不是「更新前」的那一筆。
-    },
-    { new: true }
-  );
+async function shipOrder(orderId, trackingNumber, logisticsInfo = null) {
+  const updateData = {
+    logisticsStatus: "shipping",
+    trackingNumber: trackingNumber || null,
+    updatedAt: Date.now(),
+  };
+
+  // 如果有提供完整的物流資訊，就一起存入
+  if (logisticsInfo) {
+    updateData.logisticsInfo = {
+      obtNumber: logisticsInfo.obtNumber,
+      fileNo: logisticsInfo.fileNo,
+      pdfLink: logisticsInfo.pdfLink,
+      createdAt: new Date(),
+    };
+  }
+
+  return await Order.findOneAndUpdate({ orderId }, updateData, { new: true });
 }
 module.exports = {
   Order,

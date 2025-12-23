@@ -3,8 +3,10 @@ const router = express.Router();
 
 const { getOrders, shipOrder } = require("../controllers/adminController");
 
-// GET /api/admin/orders
-router.get("/api/admin/orders", getOrders); // 👉 出貨 API
-router.post("/api/admin/orders/:orderId/ship", shipOrder); 
+// GET /api/admin/orders - 查詢訂單列表
+router.get("/orders", getOrders);
+
+// POST /api/admin/orders/:orderId/ship - 出貨（呼叫黑貓 API）
+router.post("/orders/:orderId/ship", shipOrder);
 
 module.exports = router;

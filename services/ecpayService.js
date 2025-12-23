@@ -33,6 +33,12 @@ async function createPayment(orderData) {
   const moment = require("moment");
   const dateStr = moment().format("YYYY/MM/DD HH:mm:ss");
   // Step 1: 準備參數
+  // 動態組裝前端跳轉網址（帶上 orderId）
+  const frontendBaseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const clientBackURL = `${frontendBaseUrl}/order/${orderData.orderId}`;
+
+  console.log("🔗 ClientBackURL 設定為:", clientBackURL);
+
   const base_param = {
     MerchantTradeNo: orderData.orderId,
     MerchantTradeDate: dateStr,
@@ -40,9 +46,9 @@ async function createPayment(orderData) {
     TradeDesc: "Order",
     ItemName: "Product",
     ReturnURL: process.env.ECPAY_WEBHOOK_URL, // Webhook（後端）
-    ClientBackURL: process.env.ECPAY_FRONTEND_RETURN_URL, // 前端返回頁面
+    ClientBackURL: clientBackURL, // 前端返回頁面（帶 orderId）
     ChoosePayment: "ALL",
-    PaymentType: "aio", // ← 加上這行！
+    PaymentType: "aio",
     EncryptType: 1,
   };
 

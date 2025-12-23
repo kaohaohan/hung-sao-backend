@@ -3,7 +3,6 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
 
-// 載入環境變數
 dotenv.config();
 
 const app = express();
@@ -34,7 +33,7 @@ const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 
-app.use(adminRoutes);
+app.use("/api/admin", adminRoutes);
 app.use(orderRoutes);
 app.use(paymentRoutes);
 

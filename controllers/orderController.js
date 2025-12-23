@@ -1,5 +1,6 @@
 const ecpayService = require("../services/ecpayService");
 const orderService = require("../services/orderService");
+const { calculateServerShipping } = require("../utils/shippingCalculator");
 
 async function createOrder(req, res) {
   try {
@@ -9,11 +10,10 @@ async function createOrder(req, res) {
       customerInfo,
       pickupDate,
       deliveryDate,
-      logisticsOptions = {
-        type: "HOME",
-        subType: "TCAT",
-        temperature: "0003",
-      },
+
+      paymentMethod, // 'CREDIT_CARD' 或 'COD' (貨到付款)
+      shippingMethod, // 'HOME_COOL' (宅配冷藏)
+      deliveryTime, // 'anytime', 'before_13', '14_18'
     } = req.body;
     //1.5  檢查 customerInfo
     if (
@@ -28,61 +28,107 @@ async function createOrder(req, res) {
     if (!deliveryDate || Number.isNaN(Date.parse(deliveryDate))) {
       return res.status(400).json({ error: "Invalid deliveryDate" });
     }
-
-    // 2. 計算總金額和每個商品的小計
+    //12/22 加上
+    // 2. 計算商品小計 (Subtotal)
     const itemsWithSubtotal = items.map((item) => ({
       ...item,
       subtotal: item.price * item.quantity,
     }));
 
-    const total = itemsWithSubtotal.reduce(
+    // 商品總金額 (純商品)
+    const subtotal = itemsWithSubtotal.reduce(
       (sum, item) => sum + item.subtotal,
       0
     );
 
-    // 3. 產生訂單編號
+    // 3. 計算運費 (Shipping Fee)
+    // 建議傳入 shippingMethod 變數，保持彈性
+    const shippingFee = calculateServerShipping(
+      items,
+      shippingMethod || "HOME_COOL"
+    );
+    console.log(`💰 試算結果: 商品 $${subtotal} + 運費 $${shippingFee}`);
+    // 4. 計算總金額 (Total Amount)
+    const totalAmount = subtotal + shippingFee;
+    // 5. 產生訂單編號
     const orderId = "ORD" + Date.now();
+    //修正 1: 定義 logisticsOptions 物件
+    const logisticsOptions = {
+      type: "HOME",
+      subType: "TCAT",
+      temperature: "0002", // 冷藏
+      deliveryTime: deliveryTime || "anytime", // 存入客人選的時段
+    };
 
     // 4. 準備訂單數據
     const orderData = {
       orderId,
-      amount: total,
-      paymentStatus: "pending", // 改用 paymentStatus
-      logisticsStatus: "unshipped", // 補上物流狀態
+      subtotal: subtotal, // 商品小計
+      shippingFee: shippingFee, // 運費
+      amount: totalAmount, // 總金額
+
+      paymentStatus: "pending",
+      logisticsStatus: "unshipped",
+
       items: itemsWithSubtotal,
       customerInfo,
       pickupDate,
-      deliveryDate, // 新增
-      logisticsOptions: logisticsOptions || {
-        type: "HOME",
-        subType: "TCAT",
-        temperature: "0003",
-      }, // 新增
-    };
+      deliveryDate,
 
+      logisticsOptions: logisticsOptions,
+
+      // paymentInfo 等綠界付款成功後，webhook 才會填入
+      // 不要在這裡先填，因為用戶還沒真正付款
+    };
     // 5. 存入 MongoDB
     const savedOrder = await orderService.createOrder(orderData);
     console.log(" 訂單已存入資料庫:", savedOrder.orderId);
 
-    // 6. 呼叫綠界創建付款
-    const paymentData = {
-      orderId: orderId,
-      amount: total,
-      description: "紅騷羊肉麵訂單",
-      customerInfo: customerInfo,
-      items: itemsWithSubtotal,
-    };
+    // 6. 分流：信用卡 vs 貨到付款
+    if (paymentMethod === "COD") {
+      // [情境 A] 貨到付款：直接回傳 JSON 成功
+      return res.status(200).json({
+        success: true,
+        message: "訂單建立成功 (貨到付款)",
+        orderId: orderId,
+        amount: totalAmount,
+      });
+    } else {
+      // [情境 B] 信用卡：呼叫綠界產生 HTML
+      const paymentData = {
+        orderId: orderId,
+        amount: totalAmount, // 含運費總額
+        description: "紅騷羊肉麵訂單",
+        customerInfo: customerInfo,
+        items: itemsWithSubtotal,
+      };
 
-    const html = await ecpayService.createPayment(paymentData);
-
-    // 7. 回傳付款頁面 HTML
-    res.send(html);
+      const html = await ecpayService.createPayment(paymentData);
+      res.send(html);
+    }
   } catch (error) {
     console.error("訂單建立失敗:", error);
     res.status(500).json({ error: "訂單建立失敗: " + error.message });
   }
 }
 
+async function getOrderById(req, res) {
+  try {
+    const orderId = req.params.orderId;
+    // 呼叫 Service 去 DB 撈資料
+    const order = await orderService.getOrderById(orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: "找不到該筆訂單" });
+    }
+
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 module.exports = {
   createOrder,
+  getOrderById,
 };
