@@ -37,13 +37,19 @@ app.use("/api/admin", adminRoutes);
 app.use(orderRoutes);
 app.use(paymentRoutes);
 
-// 啟動伺服器
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`🚀 伺服器運行在 http://localhost:${PORT}`);
-});
-
+// Metrics 端點（放在路由之後）
 app.get("/metrics", async (req, res) => {
   res.set("Content-Type", register.contentType);
   res.end(await register.metrics());
 });
+
+// 只在非 Vercel 環境下啟動伺服器（本地開發用）
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  const PORT = process.env.PORT || 8080;
+  app.listen(PORT, () => {
+    console.log(`🚀 伺服器運行在 http://localhost:${PORT}`);
+  });
+}
+
+// 導出 app 給 Vercel 使用
+module.exports = app;
