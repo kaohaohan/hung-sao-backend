@@ -86,7 +86,7 @@ npm run dev
 
 ## 🤝 前端專案
 
-前端 Next.js 專案：[hung-sao-mutton-noodles](https://github.com/kaohaohan/hung-sao-mutton-noodles)
+前端 Next.js 專案：[hung-sao-frontend](https://github.com/kaohaohan/hung-sao-frontend)
 
 ## 📝 授權
 
