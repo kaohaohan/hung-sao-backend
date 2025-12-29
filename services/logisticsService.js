@@ -3,7 +3,7 @@
 
 const axios = require("axios");
 const moment = require("moment");
-
+const { estimatePackageSize } = require("../utils/logisticsHelper");
 /**
  * 查詢郵號 (呼叫黑貓 ParsingAddress API)
  * @param {string} address - 要查詢的地址
@@ -38,20 +38,36 @@ async function getZipCode(address) {
 /**
  * 建立託運單 (呼叫黑貓 PrintOBT API)
  * @param {Object} orderData - 訂單資料
+ * @param {Date} customPickupDate - 可選，店家指定的出貨日（預設明天）
  * @returns {Object} { success, obtNumber, pdfLink } 或 { success, message }
  */
-async function createShipment(orderData) {
+async function createShipment(orderData, customPickupDate = null) {
   try {
     console.log(`🚚 訂單 ${orderData.orderId} 準備向黑貓下單...`);
-
     // 1. 查寄件人的郵號
     const senderZip = await getZipCode(process.env.TCAT_SENDER_ADDRESS);
 
     // 2. 準備日期
-    const shipmentDate = moment().add(1, "days").format("YYYYMMDD");
-    const deliveryDate = orderData.deliveryDate
-      ? moment(orderData.deliveryDate).format("YYYYMMDD")
-      : moment().add(2, "days").format("YYYYMMDD");
+    // 出貨日：如果店家有指定就用，沒有就用明天
+    const shipmentDate = customPickupDate
+      ? moment(customPickupDate).format("YYYYMMDD")
+      : moment().add(1, "days").format("YYYYMMDD");
+
+    // 配達日：客人選的，但不能超過出貨日 +7 天（黑貓限制）
+    const shipmentMoment = moment(shipmentDate, "YYYYMMDD");
+    const maxDeliveryDate = shipmentMoment.clone().add(7, "days");
+    let deliveryMoment = orderData.deliveryDate
+      ? moment(orderData.deliveryDate)
+      : moment().add(2, "days");
+
+    // 超過 7 天就自動修正
+    if (deliveryMoment.isAfter(maxDeliveryDate)) {
+      console.log(`⚠️ 配達日超過限制，自動調整為出貨日 +7 天`);
+      deliveryMoment = maxDeliveryDate;
+    }
+    const deliveryDate = deliveryMoment.format("YYYYMMDD");
+    //2.5 計算箱子大小
+    const calculatedSpec = estimatePackageSize(orderData.items);
 
     // 3. 組裝 Payload (對照規格書 2.2.1)
     const payload = {
@@ -64,7 +80,7 @@ async function createShipment(orderData) {
           OBTNumber: "",
           OrderId: orderData.orderId,
           Thermosphere: "0002", // 冷藏
-          Spec: "0001", // 60cm
+          Spec: calculatedSpec,
           ReceiptLocation: "01", // 到宅
           ReceiptStationNo: "", // 到宅時填空白
 
@@ -121,11 +137,15 @@ async function createShipment(orderData) {
 
       console.log(`🎉 成功！託運單號: ${orderResult.OBTNumber}`);
 
+      // FileNo 可能包含 "/" 等特殊字元，需要 URL encode
+      const encodedFileNo = encodeURIComponent(fileNo);
+
       return {
         success: true,
         obtNumber: orderResult.OBTNumber,
         fileNo: fileNo,
-        pdfLink: `https://egs.suda.com.tw/PDF/Download/${fileNo}`,
+        // 測試環境用 API 格式下載 PDF
+        pdfLink: `https://egs.suda.com.tw:8443/api/Egs/DownloadOBT?FileNo=${encodedFileNo}`,
       };
     } else {
       console.error(`❌ 黑貓拒絕: ${result.Message}`);
@@ -140,7 +160,44 @@ async function createShipment(orderData) {
   }
 }
 
+/**
+ * 下載託運單 PDF (呼叫黑貓 DownloadOBT API)
+ * @param {string} fileNo - 從 createShipment 取得的 FileNo
+ * @returns {Buffer} PDF 二進制資料
+ */
+async function downloadLabel(fileNo) {
+  try {
+    const response = await axios.post(
+      `${process.env.TCAT_API_URL}/DownloadOBT`,
+      {
+        CustomerId: process.env.TCAT_CUSTOMER_ID,
+        CustomerToken: process.env.TCAT_CUSTOMER_TOKEN,
+        FileNo: fileNo,
+      },
+      {
+        responseType: "arraybuffer", // 重要！取得二進制資料
+      }
+    );
+
+    // 檢查回傳是否為 PDF（Content-Type 應該是 application/pdf）
+    const contentType = response.headers["content-type"];
+    if (contentType && contentType.includes("application/pdf")) {
+      console.log("✅ PDF 下載成功，大小:", response.data.length, "bytes");
+      return { success: true, data: response.data };
+    } else {
+      // 如果不是 PDF，可能是錯誤訊息（JSON）
+      const errorMsg = response.data.toString("utf8");
+      console.error("❌ 下載失敗:", errorMsg);
+      return { success: false, message: errorMsg };
+    }
+  } catch (error) {
+    console.error("❌ 下載 PDF 失敗:", error.message);
+    return { success: false, message: error.message };
+  }
+}
+
 module.exports = {
   getZipCode,
   createShipment,
+  downloadLabel,
 };

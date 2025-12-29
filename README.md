@@ -6,8 +6,10 @@
 
 - **Runtime**: Node.js v18+
 - **Framework**: Express.js
-- **Payment**: ECPay SDK
-- **Architecture**: RESTful API
+- **Database**: MongoDB Atlas
+- **Payment**: 綠界 ECPay（信用卡、ATM）
+- **Logistics**: 黑貓宅急便 API（冷藏配送）
+- **Deployment**: Vercel Serverless
 
 ## 📁 專案結構
 
@@ -47,12 +49,30 @@ npm run dev
 
 ## 📡 API 端點
 
-| 方法   | 路徑                  | 說明                    |
-| ------ | --------------------- | ----------------------- |
-| `GET`  | `/`                   | API 狀態檢查            |
-| `GET`  | `/health`             | 健康檢查                |
-| `POST` | `/api/orders`         | 建立訂單 + 產生付款連結 |
-| `POST` | `/api/payment-notify` | 接收金流 Webhook        |
+| 方法   | 路徑                               | 說明                    |
+| ------ | ---------------------------------- | ----------------------- |
+| `POST` | `/api/orders`                      | 建立訂單 + 產生付款表單 |
+| `GET`  | `/api/orders/:orderId`             | 查詢單筆訂單            |
+| `POST` | `/api/orders/payment-notify`       | 綠界付款 Webhook        |
+| `GET`  | `/api/admin/orders`                | 後台：查詢所有訂單      |
+| `POST` | `/api/admin/orders/:orderId/ship`  | 後台：出貨（呼叫黑貓）  |
+| `GET`  | `/api/admin/orders/:orderId/label` | 後台：下載託運單 PDF    |
+
+## 🚚 物流出貨流程
+
+![物流 API 流程圖](./assets/logistics-flow.png)
+
+**階段一：產生託運單**
+
+1. 店員點擊「出貨」→ 後端查詢訂單資料
+2. 呼叫黑貓 `ParsingAddress` API 查詢郵遞區號
+3. 呼叫黑貓 `PrintOBT` API 建立託運單，取得單號 (OBTNumber) 與檔案編號 (FileNo)
+4. 更新訂單狀態為 `shipping`，存入 trackingNumber
+
+**階段二：列印託運單**
+
+1. 店員點擊「列印」→ 後端用 FileNo 呼叫黑貓 `DownloadOBT` API
+2. 回傳 PDF 給前端顯示/下載
 
 ## 🔒 安全性
 
@@ -62,12 +82,7 @@ npm run dev
 
 ## 📦 部署
 
-建議部署平台：Railway、Heroku、Render
-
-```bash
-# 正式環境啟動
-npm start
-```
+已部署於 **Vercel**：`https://hung-sao-backend.vercel.app`
 
 ## 🤝 前端專案
 

@@ -1,11 +1,14 @@
 // controllers/adminController.js
 
 const {
+  createShipment,
+  downloadLabel,
+} = require("../services/logisticsService");
+const {
+  getOrderById,
+  shipOrder: updateShipStatus,
   Order,
-  shipOrder: shipOrderService,
 } = require("../services/orderService");
-const { createShipment } = require("../services/logisticsService");
-
 /**
  * GET /api/admin/orders
  * 查詢訂單列表（可依狀態、時間篩選）
@@ -45,15 +48,16 @@ async function getOrders(req, res) {
  */
 async function shipOrder(req, res) {
   try {
+    //1.取得 訂單的ID
     const { orderId } = req.params;
 
-    // 1. 先找訂單
+    // 2.去DB 查訂單  存在嗎？
     const order = await Order.findOne({ orderId });
     if (!order) {
       return res.status(404).json({ error: "找不到訂單" });
     }
 
-    // 2. 檢查是否已付款
+    // 2. 檢查這單字 是否已付款
     if (order.paymentStatus !== "paid") {
       return res.status(400).json({ error: "訂單尚未付款，無法出貨" });
     }
@@ -63,8 +67,11 @@ async function shipOrder(req, res) {
       return res.status(400).json({ error: "訂單已出貨" });
     }
 
-    // 4. 呼叫黑貓 API
-    const shipResult = await createShipment(order);
+    // 4. 取得店家指定的出貨日（可選，沒填就用明天）
+    const customPickupDate = req.body.pickupDate || null;
+
+    // 5. 呼叫黑貓 API（傳入 customPickupDate）
+    const shipResult = await createShipment(order, customPickupDate);
 
     if (!shipResult.success) {
       return res
@@ -72,17 +79,12 @@ async function shipOrder(req, res) {
         .json({ error: "黑貓下單失敗: " + shipResult.message });
     }
 
-    // 5. 更新訂單狀態，並存入完整物流資訊
-    const logisticsInfo = {
-      obtNumber: shipResult.obtNumber,
-      fileNo: shipResult.fileNo,
-      pdfLink: shipResult.pdfLink,
-    };
-
-    const updated = await shipOrderService(
+    // 6. 更新訂單狀態，並存入完整物流資訊
+    // 傳入 orderId, tcatResult, 以及實際出貨日
+    const updated = await updateShipStatus(
       orderId,
-      shipResult.obtNumber,
-      logisticsInfo
+      shipResult,
+      customPickupDate
     );
 
     res.json({
@@ -96,7 +98,44 @@ async function shipOrder(req, res) {
   }
 }
 
+/**
+ * GET /api/admin/orders/:orderId/label
+ * 下載託運單 PDF
+ */
+async function printLabel(req, res) {
+  try {
+    // 你的程式碼
+    //取得 orderId（從 req.params）
+    const { orderId } = req.params;
+    //查訂單一樣 格式{ 欄位名: 值 }
+    const order = await Order.findOne({ orderId });
+    //取得 fileNo
+    const fileNo = order.logisticsInfo.fileNo;
+    //找不到回傳 錯誤
+    if (!fileNo) {
+      return res.status(404).json({ error: "找不到 fileNo" });
+    }
+
+    // 如果成功
+    const pdfResult = await downloadLabel(fileNo);
+    const trackingNumber = order.logisticsInfo.trackingNumber;
+
+    if (pdfResult.success) {
+      res.setHeader("Content-Type", "application/pdf"); // PDF 的 MIME type
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename=${trackingNumber}.pdf`
+      ); // 檔名
+      res.send(pdfResult.data); // 送什麼資料給前端？
+    } else {
+      res.status(500).json({ error: "PDF 下載失敗: " + pdfResult.message });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 module.exports = {
   getOrders,
   shipOrder,
+  printLabel,
 };

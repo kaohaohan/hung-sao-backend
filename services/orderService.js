@@ -104,10 +104,11 @@ const orderSchema = new mongoose.Schema({
   },
 
   // 🚚 日期設定 (獨立出來比較好查詢)
-  // 給黑貓：你要司機哪一天來你店裡收貨？ (通常是 T+1 明天)
+  // 出貨日：店家按「出貨」時設定，或系統自動用「明天」
+  // 改成選填，因為下單時還不知道什麼時候出貨
   pickupDate: {
     type: Date,
-    required: true,
+    required: false, // ← 改成選填
   },
   // 給黑貓：客人希望哪一天收到？
   deliveryDate: {
@@ -132,6 +133,7 @@ const orderSchema = new mongoose.Schema({
   // ==========================================
   logisticsInfo: {
     trackingNumber: String, // 託運單號 (最重要的！印在單子上的號碼)
+    fileNo: String,
     rtnCode: String, // 物流介接回傳碼
     rtnMsg: String, // 物流訊息
     allPayLogisticsID: String, // 綠界物流訂單編號 (如果透過綠界串黑貓才有)
@@ -223,24 +225,39 @@ async function updateOrderStatus(
   }
 }
 
-async function shipOrder(orderId, trackingNumber, logisticsInfo = null) {
+async function shipOrder(orderId, tcatResult, actualPickupDate = null) {
+  // tcatResult 是呼叫 createShipment 後回傳的物件
+  // 結構: { success: true, obtNumber: "...", fileNo: "...", pdfLink: "..." }
+  // actualPickupDate: 實際出貨日期（可選）
+
+  if (!tcatResult || !tcatResult.obtNumber) {
+    throw new Error("缺少黑貓物流資訊 (OBTNumber)");
+  }
+
   const updateData = {
+    // 1. 更新主狀態
     logisticsStatus: "shipping",
-    trackingNumber: trackingNumber || null,
+
+    // 2. 用點號語法更新嵌套欄位（不會覆蓋掉其他資料）
+    "logisticsInfo.trackingNumber": tcatResult.obtNumber,
+    "logisticsInfo.fileNo": tcatResult.fileNo,
+    "logisticsInfo.pdfLink": tcatResult.pdfLink,
+    "logisticsInfo.createdAt": new Date(),
+
     updatedAt: Date.now(),
   };
 
-  // 如果有提供完整的物流資訊，就一起存入
-  if (logisticsInfo) {
-    updateData.logisticsInfo = {
-      obtNumber: logisticsInfo.obtNumber,
-      fileNo: logisticsInfo.fileNo,
-      pdfLink: logisticsInfo.pdfLink,
-      createdAt: new Date(),
-    };
+  // 3. 如果有傳入出貨日，存進 pickupDate
+  if (actualPickupDate) {
+    updateData.pickupDate = new Date(actualPickupDate);
   }
 
-  return await Order.findOneAndUpdate({ orderId }, updateData, { new: true });
+  // 使用 $set 確保只更新指定欄位
+  return await Order.findOneAndUpdate(
+    { orderId },
+    { $set: updateData },
+    { new: true }
+  );
 }
 module.exports = {
   Order,
