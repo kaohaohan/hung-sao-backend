@@ -27,15 +27,16 @@ app.use(express.urlencoded({ extended: true })); // 解析表單
 
 // 加入 HTTP latency 指標
 const requestMetricsMiddleware = require("./src/middleware/requestMetrics");
+const authMiddleware = require("./src/middleware/authMiddleware");
 app.use(requestMetricsMiddleware);
 // 路由
 const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 
-app.use("/api/admin", adminRoutes);
 app.use(orderRoutes);
 app.use(paymentRoutes);
+app.use("/api/admin", authMiddleware, adminRoutes);
 
 // Metrics 端點（放在路由之後）
 app.get("/metrics", async (req, res) => {
