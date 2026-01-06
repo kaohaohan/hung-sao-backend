@@ -48,8 +48,11 @@ async function createOrder(req, res) {
       shippingMethod || "HOME_COOL"
     );
     console.log(`💰 試算結果: 商品 $${subtotal} + 運費 $${shippingFee}`);
-    // 4. 計算總金額 (Total Amount)
-    const totalAmount = subtotal + shippingFee;
+    // 4. 計算總金額 (Total Amount) 貨到付款加收30塊手續費
+    const COD_FEE = 30;
+    const isCOD = paymentMethod === "COD";
+    const totalAmount = subtotal + shippingFee + (isCOD ? COD_FEE : 0);
+
     // 5. 產生訂單編號
     const orderId = "ORD" + Date.now();
     //修正 1: 定義 logisticsOptions 物件
@@ -83,12 +86,19 @@ async function createOrder(req, res) {
       // paymentInfo 等綠界付款成功後，webhook 才會填入
       // 不要在這裡先填，因為用戶還沒真正付款
     };
-    // 5. 存入 MongoDB
-    const savedOrder = await orderService.createOrder(orderData);
+
+    // 6. 存入 MongoDB
+    const savedOrder = await orderService.createOrderWithStock(orderData);
     console.log(" 訂單已存入資料庫:", savedOrder.orderId);
 
     // 6. 分流：信用卡 vs 貨到付款
     if (paymentMethod === "COD") {
+      // 貨到付款上限 5000 元
+      if (totalAmount > 5000) {
+        return res.status(400).json({
+          error: "貨到付款金額上限為 $5,000，請改用信用卡付款",
+        });
+      }
       // [情境 A] 貨到付款：直接回傳 JSON 成功
       return res.status(200).json({
         success: true,
@@ -110,8 +120,10 @@ async function createOrder(req, res) {
       res.send(html);
     }
   } catch (error) {
-    console.error("訂單建立失敗:", error);
-    res.status(500).json({ error: "訂單建立失敗: " + error.message });
+    if (error.message === "庫存不足") {
+      return res.status(409).json({ error: "庫存不足" });
+    }
+    return res.status(500).json({ error: "訂單建立失敗: " + error.message });
   }
 }
 
