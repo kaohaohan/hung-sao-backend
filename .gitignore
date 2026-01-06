@@ -31,3 +31,5 @@ build/
 test-payment.html
 tmp-npm-cache/
 label_*.pdf
+learn-logistics.js
+test-tcat.js
