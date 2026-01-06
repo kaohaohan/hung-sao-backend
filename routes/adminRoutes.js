@@ -5,14 +5,25 @@ const {
   getOrders,
   shipOrder,
   printLabel,
+  syncOrderStatus,
+  getProducts,
+  upsertProduct,
+  updateStock,
 } = require("../controllers/adminController");
 
-// GET /api/admin/orders - 查詢訂單列表
+// ==========================================
+// 訂單管理
+// ==========================================
 router.get("/orders", getOrders);
-
-// POST /api/admin/orders/:orderId/ship - 出貨（呼叫黑貓 API）
 router.post("/orders/:orderId/ship", shipOrder);
-
-//下載托運
 router.get("/orders/:orderId/label", printLabel);
+router.post("/orders/sync-status", syncOrderStatus);
+
+// ==========================================
+// 商品管理
+// ==========================================
+router.get("/products", getProducts);
+router.post("/products", upsertProduct);
+router.patch("/products/:productId/stock", updateStock);
+
 module.exports = router;
