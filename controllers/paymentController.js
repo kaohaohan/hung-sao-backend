@@ -44,15 +44,18 @@ async function receivePaymentNotify(req, res) {
   const paymentMethod = mapPaymentMethod(req.body.PaymentType);
 
   if (RtnCode !== "1") {
-    await orderService.restoreStockForOrder(orderId);
-    await orderService.updateOrderStatus(
-      orderId,
-      "failed",
-      paymentInfo,
-      paymentMethod
-    );
-    console.log("❌ 付款失敗:", RtnMsg);
-    return res.send("1|OK"); // ← 失敗也要回傳 1|OK
+    console.log(`❌ 付款失敗 (Code: ${RtnCode}): ${RtnMsg}`);
+
+    // 呼叫 Service：它會負責「回補庫存」+「更新狀態為 failed」+「Transaction保護」
+    try {
+      await orderService.restoreStockForOrder(orderId);
+
+      // 這裡不需要再呼叫 updateOrderStatus 了，因為上面已經做掉了
+      // 但如果你需要紀錄 paymentInfo (失敗原因)，你可以稍微修改上面的 Service 讓它接受 paymentInfo
+    } catch (err) {
+      console.error("回補流程異常:", err);
+      // 即使回補失敗，還是要回傳 1|OK 給綠界，不然它會一直重試
+    }
   }
 
   const updatedOrder = await orderService.updateOrderStatus(
