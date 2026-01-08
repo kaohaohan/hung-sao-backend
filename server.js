@@ -33,9 +33,11 @@ app.use(requestMetricsMiddleware);
 const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const productRoutes = require("./routes/productRoutes");
 
 app.use(orderRoutes);
 app.use(paymentRoutes);
+app.use(productRoutes);
 app.use("/api/admin", authMiddleware, adminRoutes);
 
 // Metrics 端點（放在路由之後）

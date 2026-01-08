@@ -1,5 +1,8 @@
 const { Product } = require("../models/Product");
+const { Order } = require("../models/Order");
 
+//一鍋湯煮50包 紅騷or 當歸
+const BATCH_SIZE = 50;
 async function getProducts() {
   return await Product.find();
 }
@@ -25,8 +28,16 @@ async function updateStock(productId, stock, adjust) {
   return await Product.findOneAndUpdate({ productId }, update, { new: true });
 }
 
+async function getLowStockProducts(threshold = 10) {
+  return await Product.find(
+    { stock: { $lt: threshold } },
+    { productId: 1, name: 1, stock: 1, _id: 0 }
+  ).sort({ stock: 1 });
+}
+
 module.exports = {
   getProducts,
   upsertProduct,
   updateStock,
+  getLowStockProducts,
 };
