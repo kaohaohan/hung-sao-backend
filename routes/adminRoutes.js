@@ -9,6 +9,8 @@ const {
   getProducts,
   upsertProduct,
   updateStock,
+  getProductionNeeds,
+  askAdminAgent,
 } = require("../controllers/adminController");
 
 // ==========================================
@@ -25,5 +27,7 @@ router.post("/orders/sync-status", syncOrderStatus);
 router.get("/products", getProducts);
 router.post("/products", upsertProduct);
 router.patch("/products/:productId/stock", updateStock);
+router.get("/production/needs", getProductionNeeds);
 
+router.post("/agent/ask", askAdminAgent);
 module.exports = router;
