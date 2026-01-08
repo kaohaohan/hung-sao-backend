@@ -1,6 +1,7 @@
 const ecpayService = require("../services/ecpayService");
 const orderService = require("../services/orderService");
 const { calculateServerShipping } = require("../utils/shippingCalculator");
+const { sendError } = require("../utils/response");
 
 async function createOrder(req, res) {
   try {
@@ -122,6 +123,9 @@ async function createOrder(req, res) {
   } catch (error) {
     if (error.message === "庫存不足") {
       return res.status(409).json({ error: "庫存不足" });
+    }
+    if (error.message === "MAX_QTY") {
+      return sendError(res, 400, "單筆超過上限");
     }
     return res.status(500).json({ error: "訂單建立失敗: " + error.message });
   }

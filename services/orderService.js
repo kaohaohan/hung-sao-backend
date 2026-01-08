@@ -24,6 +24,7 @@ async function listOrders(query, sort = { createdAt: -1 }) {
 // 根據 orderId 查詢訂單
 async function getOrderById(orderId) {
   try {
+    console.log(orderId);
     return await Order.findOne({ orderId });
   } catch (error) {
     throw new Error(`查詢訂單失敗: ${error.message}`);
@@ -135,13 +136,21 @@ async function createOrderWithStock(orderData) {
 
   try {
     const items = orderData.items;
+    const totalQty = items.quantity;
+    const maxQty = Number(process.env.MAX_ORDER_QTY || 10);
+    //設buffer緩衝庫存 實際上 只能
+    const safetyBuffer = Number(process.env.SAFETY_BUFFER || 0);
+
+    if (totalQty > maxQty) throw new Error("MAX_QTY");
 
     for (const item of items) {
       const productId = item.itemId;
       const qty = item.quantity;
+      if (qty > maxQty) throw new Error("MAX_QTY");
       // 這prodcutid 的stock>= qty
       const updatedProduct = await Product.findOneAndUpdate(
-        { productId, stock: { $gte: qty } },
+        { productId, stock: { $gte: qty + safetyBuffer } },
+
         { $inc: { stock: -qty } },
         { new: true, session }
       );
@@ -163,17 +172,73 @@ async function createOrderWithStock(orderData) {
 //付款失敗 rollback 庫存
 //webhook回傳失敗回滾 假設平台重覆發送 用paymentStatus 判斷 只有pending才rollbback
 async function restoreStockForOrder(orderId) {
-  const order = await getOrderById(orderId);
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  if (!order) return;
-  if (order.paymentStatus !== "pending") {
-    return;
+  try {
+    // 1. 鎖定並查詢訂單 (帶入 session)
+    const order = await getOrderById(orderId);
+    // 2. 雙重檢查：如果找不到單，或是狀態不是 pending，直接結束
+    // 這樣可以防止綠界重複呼叫導致重複加庫存
+    if (!order || order.paymentStatus !== "pending") {
+      await session.abortTransaction();
+      return;
+    }
+    for (const item of order.items || []) {
+      const productId = item.itemId;
+      const qty = item.quantity;
+      await Product.updateOne({ productId }, { $inc: { stock: qty } });
+    }
+
+    // 4. 🔥 關鍵：在同一個交易內，直接將訂單標記為 failed
+    // 這樣可以確保「庫存回補」跟「狀態更新」絕對同步
+    order.paymentStatus = "failed";
+    // order.logisticsStatus = "cancelled"; // 視需求是否要連物流狀態一起改
+    await order.save({ session });
+
+    await session.commitTransaction();
+    console.log(`✅ 訂單 ${orderId} 庫存回補完成，狀態已更新為 failed`);
+  } catch (error) {
+    await session.abortTransaction();
+    console.error(`❌ 回補庫存失敗: ${error.message}`);
+    throw error;
+  } finally {
+    session.endSession();
   }
-  for (const item of order.items || []) {
-    const productId = item.itemId;
-    const qty = item.quantity;
-    await Product.updateOne({ productId }, { $inc: { stock: qty } });
-  }
+}
+
+function mapCounts(rows) {
+  return rows.reduce((acc, row) => {
+    const key = row._id ?? "unknown";
+    acc[key] = row.count;
+    return acc;
+  }, {});
+}
+
+async function getOrderStatusSummary() {
+  const paymentRows = await Order.aggregate([
+    { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
+  ]);
+  const logisticsRows = await Order.aggregate([
+    { $group: { _id: "$logisticsStatus", count: { $sum: 1 } } },
+  ]);
+
+  const payment = mapCounts(paymentRows);
+  const logistics = mapCounts(logisticsRows);
+
+  return {
+    paymentStatus: {
+      pending: payment.pending || 0,
+      paid: payment.paid || 0,
+      failed: payment.failed || 0,
+    },
+    logisticsStatus: {
+      unshipped: logistics.unshipped || 0,
+      shipping: logistics.shipping || 0,
+      arrived: logistics.arrived || 0,
+      cancelled: logistics.cancelled || 0,
+    },
+  };
 }
 
 module.exports = {
@@ -185,4 +250,5 @@ module.exports = {
   markCODDelivered,
   createOrderWithStock,
   restoreStockForOrder,
+  getOrderStatusSummary,
 };
