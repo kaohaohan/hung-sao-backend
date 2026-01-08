@@ -1,4 +1,6 @@
 // controllers/adminController.js
+const { calculateProductionNeeds } = require("../services/productionService");
+const { askAgent } = require("../services/aiAgentService");
 
 const {
   createShipment,
@@ -161,10 +163,13 @@ async function printLabel(req, res) {
 async function syncOrderStatus(req, res) {
   try {
     const TWO_HOURS = 2 * 60 * 60 * 1000;
-    const orders = await listOrders({
-      paymentMethod: "COD", // 貨到付款
-      logisticsStatus: "shipping", // 配送中
-    }, null);
+    const orders = await listOrders(
+      {
+        paymentMethod: "COD", // 貨到付款
+        logisticsStatus: "shipping", // 配送中
+      },
+      null
+    );
 
     const results = { total: orders.length, updated: 0, skipped: 0, failed: 0 };
 
@@ -279,7 +284,34 @@ async function updateStock(req, res) {
   }
 }
 
+async function getProductionNeeds(req, res) {
+  try {
+    const { start, end } = req.query;
+    const result = await calculateProductionNeeds({
+      startDate: start,
+      endDate: end,
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+async function askAdminAgent(req, res) {
+  try {
+    const { question, startDate, endDate } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: "question 必填" });
+    }
+    const answer = await askAgent({ question, startDate, endDate });
+    return res.json({ answer });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
+  askAdminAgent,
+  getProductionNeeds,
   getOrders,
   shipOrder,
   printLabel,
