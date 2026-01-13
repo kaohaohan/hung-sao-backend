@@ -33,3 +33,5 @@ tmp-npm-cache/
 label_*.pdf
 learn-logistics.js
 test-tcat.js
+#firebase
+firebase-adminsdk.json

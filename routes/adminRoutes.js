@@ -11,7 +11,11 @@ const {
   updateStock,
   getProductionNeeds,
   askAdminAgent,
+  verify,
 } = require("../controllers/adminController");
+//登入要驗證到api
+
+router.get("/verify", verify);
 
 // ==========================================
 // 訂單管理

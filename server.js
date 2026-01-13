@@ -38,6 +38,7 @@ const productRoutes = require("./routes/productRoutes");
 app.use(orderRoutes);
 app.use(paymentRoutes);
 app.use(productRoutes);
+//進到middleware先處理
 app.use("/api/admin", authMiddleware, adminRoutes);
 
 // Metrics 端點（放在路由之後）

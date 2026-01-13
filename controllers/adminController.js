@@ -19,6 +19,7 @@ const {
   upsertProduct: saveProduct,
   updateStock: updateProductStock,
 } = require("../services/productService");
+const { parseTwoDigitYear } = require("moment/moment");
 /**
  * GET /api/admin/orders
  * 查詢訂單列表（可依狀態、時間篩選）
@@ -309,6 +310,11 @@ async function askAdminAgent(req, res) {
   }
 }
 
+async function verify(req, res) {
+  try {
+    return res.status(200).json({ ok: true, user: req.user || null });
+  } catch (error) {}
+}
 module.exports = {
   askAdminAgent,
   getProductionNeeds,
@@ -319,4 +325,5 @@ module.exports = {
   getProducts,
   upsertProduct,
   updateStock,
+  verify,
 };
