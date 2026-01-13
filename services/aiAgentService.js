@@ -6,7 +6,7 @@ const { getOrderStatusSummary } = require("./orderService");
 const { getExpiringBatches } = require("./batchService");
 const { getProducts } = require("./productService");
 
-// 1. 增強 System Prompt (你的靈魂)
+// 1. 增強 System Prompt
 const SYSTEM_PROMPT = `
 你是「紅騷羊肉麵」的智慧生產助理，請用台灣繁體中文回答。
 你的角色是協助老闆（爸爸）規劃生產排程。
@@ -21,7 +21,7 @@ const SYSTEM_PROMPT = `
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// 2. 意圖判斷 - 哈囉 (保留，這很棒，省錢)
+// 2. 意圖判斷 - 哈囉
 function isGreeting(text) {
   const trimmed = text.trim();
   return (
@@ -82,8 +82,8 @@ function getSmartGreeting() {
   const randomIndex = Math.floor(Math.random() * allGreetings.length);
   return allGreetings[randomIndex];
 }
-
-// 3. 意圖判斷 - 查庫存 (保留，用來觸發 RAG)
+ 
+// 3. 意圖判斷 - 查庫存 Rule-based (保留，用來觸發 RAG)
 function isProductionQuery(text) {
   const keywords = [
     "這週",
@@ -201,7 +201,8 @@ async function askAgent({ question, startDate, endDate }) {
     }
 
     // B. 生產相關問題：混合模式 (RAG)
-    // 雖然我們用關鍵字判斷意圖，但"回答"還是交給 AI
+    //  判斷斷意圖 → 直接呼叫 calculateProductionNeeds()
+    //拿到 JSON塞進 prompt
     let productionData = null;
     let isRAG = false;
     let userPrompt = "";

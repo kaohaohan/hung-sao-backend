@@ -21,7 +21,7 @@ async function calculateProductionNeeds({ startDate, endDate } = {}) {
   if (!endDate) end.setDate(end.getDate() + 7);
   end.setHours(0, 0, 0, 0);
 
-  // 只抓會出貨的訂單：已付款 + COD 待付款
+  // 把日期也 放進去 只抓會出貨的訂單：已付款 + COD 待付款
   const orders = await Order.find({
     deliveryDate: { $gte: start, $lt: end },
     $or: [
@@ -81,3 +81,20 @@ async function calculateProductionNeeds({ startDate, endDate } = {}) {
 }
 
 module.exports = { calculateProductionNeeds };
+
+/*{
+  startDate: Date,         // 查詢區間起始日 (今天 00:00)
+  endDate: Date,           // 查詢區間結束日 (+7天 00:00)
+  totalOrders: Number,     // 符合條件的訂單筆數
+  totalPackages: Number,   // 本週所有品項的總包數
+  productionAdvice: [
+    {
+      productName: String, // 品項中文名
+      count: Number,       // 本週需求量
+      stock: Number,       // 目前庫存
+      needToMake: Number,  // 還要補做幾包 (含 safety buffer)
+      batches: Number,     // 要煮幾鍋
+      safetyBuffer: Number // 安全庫存
+    }
+  ]
+} */

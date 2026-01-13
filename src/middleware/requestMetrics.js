@@ -1,4 +1,4 @@
-// src/middleware/requestMetrics.js
+// src/ware/requestMetrics.js
 const { httpRequestDuration } = require("../observability/metrics");
 
 // 記錄 HTTP latency
