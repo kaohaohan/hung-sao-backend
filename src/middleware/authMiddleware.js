@@ -19,6 +19,7 @@ async function checkAuth(req, res, next) {
     if (!process.env.ADMIN_UIDS) {
       return sendError(res, 500, "ADMIN_UIDS is not set", "AUTH_CONFIG");
     }
+    //用我要求的帳密.UID去對這個登入進來的UID
     const adminUids = process.env.ADMIN_UIDS.split(",");
     if (!adminUids.includes(decodedToken.uid)) {
       return sendError(
