@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const orderSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
   // ==========================================
   // 1. 訂單核心識別 (Core Identity)
   // ==========================================

@@ -34,6 +34,18 @@ async function receivePaymentNotify(req, res) {
   const { RtnCode, RtnMsg } = req.body;
   const orderId = req.body.MerchantTradeNo;
 
+  //避免綠界重覆處理
+  const order = await orderService.getOrderById(orderId); // 用訂單號去 DB 查單
+
+  if (!order) return res.send("1|OK"); // 查無此單，回 OK 讓綠界不要再吵了
+
+  // 🔥 關鍵補強：冪等性檢查 (你原本漏了這段)
+  // 如果這張單已經是 "paid" (付過了) 或 "failed" (處理過失敗了)
+  // 代表這是重複的通知，直接忽略！
+  if (order.paymentStatus === "paid" || order.paymentStatus === "failed") {
+    console.log("⚠️ 重複通知，直接忽略");
+    return res.send("1|OK");
+  }
   const paymentInfo = {
     TradeNo: req.body.TradeNo,
     PaymentType: req.body.PaymentType,
@@ -56,6 +68,7 @@ async function receivePaymentNotify(req, res) {
       console.error("回補流程異常:", err);
       // 即使回補失敗，還是要回傳 1|OK 給綠界，不然它會一直重試
     }
+    return res.send("1|OK"); // 🔥 記得要 return！不要往下跑
   }
 
   const updatedOrder = await orderService.updateOrderStatus(
