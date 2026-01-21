@@ -5,35 +5,30 @@ const crypto = require("crypto");
  * 核心演算法：計算 CheckMacValue
  */
 function calculateCheckMacValue(params, hashKey, hashIV) {
-  // 1) 排序
-  const sortedKeys = Object.keys(params).sort();
+  const processParams = { ...params };
+  delete processParams.CheckMacValue;
+  delete processParams.HashKey;
+  delete processParams.HashIV;
 
-  // 2) 組合成 key=value 字串
-  let checkStr = sortedKeys.map((key) => `${key}=${params[key]}`).join("&");
+  const sortedKeys = Object.keys(processParams).sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase())
+  );
 
-  // 3) 前後加上 Key 和 IV
-  checkStr = `HashKey=${hashKey}&${checkStr}&HashIV=${hashIV}`;
+  const rawParam = sortedKeys
+    .map((key) => `${key}=${processParams[key]}`)
+    .join("&")
+    .toLowerCase();
 
-  // 4) URL Encode 並轉為小寫
+  const checkStr = `HashKey=${hashKey}&${rawParam}&HashIV=${hashIV}`;
+
   let encodedStr = encodeURIComponent(checkStr).toLowerCase();
-
-  // 5) 執行綠界規定的取代規則 (鏈式呼叫確保一定執行)
   encodedStr = encodedStr
-    .replace(/%2d/g, "-")
-    .replace(/%5f/g, "_")
-    .replace(/%2e/g, ".")
-    .replace(/%21/g, "!")
-    .replace(/%2a/g, "*")
-    .replace(/%28/g, "(")
-    .replace(/%29/g, ")")
-    .replace(/%20/g, "+")
-    .replace(/%3d/g, "=")
-    .replace(/%26/g, "&");
+    .replace(/'/g, "%27")
+    .replace(/~/g, "%7e")
+    .replace(/%20/g, "+");
 
-  // 🔥 這次這個 Log 一定要跑出來才算數！
-  console.log("🚀 [Final Debug] 加密前字串:", encodedStr);
+  console.log("🚀 [Final] 加密前字串:", encodedStr);
 
-  // 6) SHA256 加密並轉大寫
   return crypto
     .createHash("sha256")
     .update(encodedStr)
@@ -43,10 +38,18 @@ function calculateCheckMacValue(params, hashKey, hashIV) {
 
 function verifyCheckMacValue(data, hashKey, hashIV) {
   const receivedCheckMacValue = data.CheckMacValue;
-  const params = { ...data };
-  delete params.CheckMacValue;
 
-  const myCheckMacValue = calculateCheckMacValue(params, hashKey, hashIV);
+  // 計算
+  const myCheckMacValue = calculateCheckMacValue(data, hashKey, hashIV);
+
+  if (receivedCheckMacValue !== myCheckMacValue) {
+    console.log("❌ 簽章不符！");
+    console.log("收到的:", receivedCheckMacValue);
+    console.log("計算的:", myCheckMacValue);
+  } else {
+    console.log("✅ 簽章驗證通過！");
+  }
+
   return receivedCheckMacValue === myCheckMacValue;
 }
 

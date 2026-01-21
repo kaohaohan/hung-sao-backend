@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true })); // 解析表單
 
 // 加入 HTTP latency 指標
 const requestMetricsMiddleware = require("./src/middleware/requestMetrics");
-const authMiddleware = require("./src/middleware/authMiddleware");
+const { checkAuth } = require("./src/middleware/authMiddleware");
 app.use(requestMetricsMiddleware);
 // 路由
 const orderRoutes = require("./routes/orderRoutes");
@@ -39,7 +39,7 @@ app.use(orderRoutes);
 app.use(paymentRoutes);
 app.use(productRoutes);
 //進到middleware先處理
-app.use("/api/admin", authMiddleware, adminRoutes);
+app.use("/api/admin", checkAuth, adminRoutes);
 
 // Metrics 端點（放在路由之後）
 app.get("/metrics", async (req, res) => {

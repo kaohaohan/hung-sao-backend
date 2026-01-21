@@ -1,6 +1,6 @@
 const { Order } = require("../models/Order");
 const { Product } = require("../models/Product");
-
+//店家一鍋湯可以做50包
 const BATCH_SIZE = 50;
 // 固定三品項的中文顯示名稱
 const DISPLAY_NAME = {
@@ -10,10 +10,11 @@ const DISPLAY_NAME = {
 };
 // 限定只統計這三個品項
 const ALLOWED_PRODUCT_IDS = ["mutton_stew", "angelica_mutton", "duck_blood"];
+//反正最低庫存要有５包
 const safetyBuffer = Number(process.env.SAFETY_BUFFER || 0);
 
 async function calculateProductionNeeds({ startDate, endDate } = {}) {
-  // 預設查詢區間：今天 00:00 到 +7 天 00:00
+  //處理時間 預設查詢區間：今天 00:00 到 +7 天 00:00
   const start = startDate ? new Date(startDate) : new Date();
   start.setHours(0, 0, 0, 0);
 
@@ -21,7 +22,7 @@ async function calculateProductionNeeds({ startDate, endDate } = {}) {
   if (!endDate) end.setDate(end.getDate() + 7);
   end.setHours(0, 0, 0, 0);
 
-  // 把日期也 放進去 只抓會出貨的訂單：已付款 + COD 待付款
+  // 只抓會Order 裡 出貨的訂單：已付款 + COD 待付款 在把 start 跟end也放進去
   const orders = await Order.find({
     deliveryDate: { $gte: start, $lt: end },
     $or: [
@@ -29,7 +30,7 @@ async function calculateProductionNeeds({ startDate, endDate } = {}) {
       { paymentStatus: "pending", paymentMethod: "COD" },
     ],
   });
-  // 預先建立三個品項，確保回傳時一定都有
+  // 預先建立三個品項裝到箱子裡 ，確保回傳時一定都有{ mutton_stew:0, angelica_mutton:0......}
   const summary = Object.fromEntries(ALLOWED_PRODUCT_IDS.map((id) => [id, 0]));
 
   // 逐筆訂單累加每個品項的需求量

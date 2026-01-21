@@ -207,6 +207,56 @@ async function restoreStockForOrder(orderId) {
   }
 }
 
+// 重新付款前：若訂單已失敗，嘗試重新保留庫存並重設為 pending
+async function prepareOrderForRetry(orderId) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const order = await Order.findOne({ orderId }).session(session);
+    if (!order) {
+      await session.abortTransaction();
+      return null;
+    }
+
+    if (order.paymentStatus === "paid") {
+      throw new Error("ORDER_PAID");
+    }
+
+    if (order.paymentMethod === "COD") {
+      throw new Error("ORDER_COD");
+    }
+
+    if (order.paymentStatus === "failed") {
+      const safetyBuffer = Number(process.env.SAFETY_BUFFER || 0);
+
+      for (const item of order.items || []) {
+        const productId = item.itemId;
+        const qty = item.quantity;
+        const updatedProduct = await Product.findOneAndUpdate(
+          { productId, stock: { $gte: qty + safetyBuffer } },
+          { $inc: { stock: -qty } },
+          { new: true, session }
+        );
+
+        if (!updatedProduct) throw new Error("庫存不足");
+      }
+
+      order.paymentStatus = "pending";
+      order.updatedAt = Date.now();
+      await order.save({ session });
+    }
+
+    await session.commitTransaction();
+    return order;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+}
+
 function mapCounts(rows) {
   return rows.reduce((acc, row) => {
     const key = row._id ?? "unknown";
@@ -250,5 +300,6 @@ module.exports = {
   markCODDelivered,
   createOrderWithStock,
   restoreStockForOrder,
+  prepareOrderForRetry,
   getOrderStatusSummary,
 };

@@ -32,7 +32,7 @@ async function receivePaymentNotify(req, res) {
   };
 
   const { RtnCode, RtnMsg } = req.body;
-  const orderId = req.body.MerchantTradeNo;
+  const orderId = req.body.CustomField1 || req.body.MerchantTradeNo;
 
   //避免綠界重覆處理
   const order = await orderService.getOrderById(orderId); // 用訂單號去 DB 查單

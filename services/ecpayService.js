@@ -39,14 +39,16 @@ async function createPayment(orderData) {
 
   console.log("🔗 ClientBackURL 設定為:", clientBackURL);
 
+  const tradeNo = orderData.merchantTradeNo || orderData.orderId;
   const base_param = {
-    MerchantTradeNo: orderData.orderId,
+    MerchantTradeNo: tradeNo,
     MerchantTradeDate: dateStr,
     TotalAmount: String(orderData.amount),
     TradeDesc: "Order",
     ItemName: "Product",
     ReturnURL: process.env.ECPAY_WEBHOOK_URL, // Webhook（後端）
     ClientBackURL: clientBackURL, // 前端返回頁面（帶 orderId）
+    CustomField1: orderData.orderId,
     ChoosePayment: "ALL",
     PaymentType: "aio",
     EncryptType: 1,

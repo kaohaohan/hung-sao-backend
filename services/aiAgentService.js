@@ -24,10 +24,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // 2. 意圖判斷 - 哈囉
 function isGreeting(text) {
   const trimmed = text.trim();
-  return (
-    trimmed === "" ||
-    /^(哈囉|哈啰|你好|嗨|hi|hello|hey|早|早安|午安|晚安)/i.test(trimmed)
-  );
+  const greetingRegex = /^(早|哈囉|哈啰|你好|嗨|hi|hello|hey|早安|午安|晚安)$/i;
+  return greetingRegex.test(trimmed);
 }
 function getSmartGreeting() {
   const hour = new Date().getHours(); // 取得現在幾點 (0-23)
@@ -82,7 +80,7 @@ function getSmartGreeting() {
   const randomIndex = Math.floor(Math.random() * allGreetings.length);
   return allGreetings[randomIndex];
 }
- 
+
 // 3. 意圖判斷 - 查庫存 Rule-based (保留，用來觸發 RAG)
 function isProductionQuery(text) {
   const keywords = [
@@ -102,6 +100,37 @@ function isProductionQuery(text) {
     "產品",
   ];
   return keywords.some((keyword) => text.includes(keyword));
+}
+
+// 3.1 意圖判斷 - 查「鍋數」
+function isBatchQuery(text) {
+  const keywords = ["幾鍋", "煮幾鍋", "鍋數"];
+  return keywords.some((keyword) => text.includes(keyword));
+}
+// 3.2 意圖判斷 - 查「包數」
+function isPackageQuery(text) {
+  const keywords = ["幾包"];
+  return keywords.some((keyword) => text.includes(keyword));
+}
+function getProductionIntent(text) {
+  if (isPackageQuery(text)) return "package";
+  if (isBatchQuery(text)) return "batch";
+  return "production";
+}
+function detectTargetProductId(text) {
+  const t = (text || "").trim();
+
+  // 1) 鴨血 / 臭豆腐 → duck_blood
+  if (t.includes("鴨血") || t.includes("臭豆腐")) return "duck_blood";
+
+  // 2) 當歸 → angelica_mutton
+  // 注意：要在「羊肉」之前判斷，避免「當歸羊肉」被誤判成 mutton_stew
+  if (t.includes("當歸")) return "angelica_mutton";
+
+  // 3) 紅騷 / 羊肉 → mutton_stew
+  if (t.includes("紅騷") || t.includes("羊肉")) return "mutton_stew";
+
+  return null;
 }
 
 function isLowStockQuery(text) {
@@ -177,7 +206,13 @@ function formatExpiryAnswer(batches, days) {
 async function askAgent({ question, startDate, endDate }) {
   try {
     const safeQuestion = (question || "").trim();
-
+    const targetProductId = detectTargetProductId(safeQuestion);
+    //先檢查「幾包」，再檢查「幾鍋」，都沒有就當一般生產查詢
+    const intent = isPackageQuery(safeQuestion)
+      ? "package"
+      : isBatchQuery(safeQuestion)
+      ? "batch"
+      : null;
     // A. 簡單招呼：直接回，不浪費 AI 資源 (Rule-based)
     if (isGreeting(safeQuestion)) {
       return getSmartGreeting();
@@ -209,8 +244,29 @@ async function askAgent({ question, startDate, endDate }) {
     // 如果命中關鍵字帶入資料
 
     if (isProductionQuery(safeQuestion)) {
-      console.log("🔍 偵測到生產意圖，正在撈取數據...");
+      const intent = getProductionIntent(safeQuestion);
+
+      console.log("🔍 偵測到生產意圖:", intent);
+      //productionData 回傳一個物件
       productionData = await calculateProductionNeeds({ startDate, endDate });
+
+      if (productionData && productionData.productionAdvice) {
+        //反正假設意圖 是幾鍋那就->看productId 是紅騷跟當歸
+        if (intent === "batch") {
+          productionData.productionAdvice =
+            productionData.productionAdvice.filter(
+              (item) =>
+                item.productId === "mutton_stew" ||
+                item.productId === "angelica_mutton"
+            );
+          //那假設 是幾包 + 指定品項 只留 targetProductId
+        } else if (intent === "package" && targetProductId) {
+          productionData.productionAdvice =
+            productionData.productionAdvice.filter(
+              (item) => item.productId === targetProductId
+            );
+        }
+      }
       isRAG = true;
     }
 
@@ -229,12 +285,19 @@ async function askAgent({ question, startDate, endDate }) {
       model: "gemini-flash-latest",
       systemInstruction: SYSTEM_PROMPT,
     });
+    const intentHint =
+      intent === "package"
+        ? "只回答包數，不要換算鍋數。"
+        : intent === "batch"
+        ? "請回答鍋數。"
+        : "";
 
     // 組合 Prompt：這是 RAG 的精髓
     // 我們告訴 AI：「這是使用者的問題」以及「這是剛出爐的數據」
     if (isRAG && productionData) {
       userPrompt = `
 【使用者問題】：${safeQuestion}
+${intentHint ? `【回覆規則】：${intentHint}` : ""}
 【後台即時數據 (JSON)】：
 ${JSON.stringify(productionData, null, 2)}
 請根據上述數據回答。

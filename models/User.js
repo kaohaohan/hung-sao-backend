@@ -2,7 +2,7 @@
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-  // 🔥 核心：用這個 ID 來對應 Firebase
+  // 核心：用這個 ID 來對應 Firebase
   firebaseUid: { type: String, required: true, unique: true, index: true },
 
   email: { type: String, required: true },
@@ -12,6 +12,9 @@ const userSchema = new mongoose.Schema({
 
   isEmailVerified: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  //0119 補充
+  
+
 });
 
 module.exports = mongoose.model("User", userSchema);

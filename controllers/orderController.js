@@ -147,7 +147,52 @@ async function getOrderById(req, res) {
   }
 }
 
+function buildMerchantTradeNo(orderId) {
+  const tail = String(orderId).replace(/[^A-Za-z0-9]/g, "").slice(-6);
+  const suffix = String(Date.now()).slice(-10);
+  return `RT${tail}${suffix}`;
+}
+
+async function retryPayment(req, res) {
+  try {
+    const { orderId } = req.params;
+    const order = await orderService.prepareOrderForRetry(orderId);
+
+    if (!order) {
+      return res.status(404).json({ error: "找不到該筆訂單" });
+    }
+
+    const paymentData = {
+      merchantTradeNo: buildMerchantTradeNo(order.orderId),
+      orderId: order.orderId,
+      amount: order.amount,
+      description: "紅騷羊肉麵訂單",
+      customerInfo: order.customerInfo,
+      items: order.items,
+    };
+
+    const html = await ecpayService.createPayment(paymentData);
+    res.send(html);
+  } catch (error) {
+    if (error.message === "ORDER_PAID") {
+      return res.status(400).json({ error: "訂單已付款，無需重新付款" });
+    }
+    if (error.message === "ORDER_COD") {
+      return res
+        .status(400)
+        .json({ error: "貨到付款無需重新付款" });
+    }
+    if (error.message === "庫存不足") {
+      return res.status(409).json({ error: "庫存不足，無法重新付款" });
+    }
+    return res
+      .status(500)
+      .json({ error: "重新付款失敗: " + error.message });
+  }
+}
+
 module.exports = {
   createOrder,
   getOrderById,
+  retryPayment,
 };
