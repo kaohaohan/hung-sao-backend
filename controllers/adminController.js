@@ -87,9 +87,10 @@ async function shipOrder(req, res) {
     const shipResult = await createShipment(order, scheduledPickupDate);
 
     if (!shipResult.success) {
-      return res
-        .status(500)
-        .json({ error: "黑貓下單失敗: " + shipResult.message });
+      //黑貓有問題回400不要回500 
+      return res.status(400).json({
+        error: `黑貓系統維護中，請稍後再試 (${shipResult.message || "UNKNOWN"})`,
+      });
     }
 
     // 6. 更新訂單狀態，並呼叫 orderService 寫回 DB（狀態/物流資訊/日期）
@@ -113,7 +114,8 @@ async function shipOrder(req, res) {
         : null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("shipOrder error:", err);
+    res.status(400).json({ error: "黑貓系統維護中，請稍後再試" });
   }
 }
 
