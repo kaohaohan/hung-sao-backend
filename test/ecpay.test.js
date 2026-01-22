@@ -1,15 +1,17 @@
 // tests/ecpay.test.js
 const {
-  verifyCheckMacValue,
   generateCheckMacValue,
+  verifyCheckMacValue,
 } = require("../utils/ecpayHelper");
+// 引入綠界官方的 SDK。這是「法官」，它算出來的永遠是對的。
+const APIHelper = require("ecpay_aio_nodejs/lib/ecpay_payment/helper");
 
 // 這是綠界測試環境的通用 Key (公開的)
 const TestHashKey = "5294y06JbISpM5x9";
 const TestHashIV = "v77hoKGq4kWxNNIS";
 
 describe("綠界金流 Helper 測試", () => {
-  test("generateCheckMacValue 應該能產生正確的加密簽章", () => {
+  test("generateCheckMacValue 對齊官方 SDK 計算結果", () => {
     // 模擬資料 (這是綠界官方文件裡的範例)
     const mockData = {
       MerchantID: "2000132",
@@ -24,55 +26,105 @@ describe("綠界金流 Helper 測試", () => {
       EncryptType: "1",
     };
 
-    // 官方算出來的正確答案
-    // 來源：綠界全方位金流介接技術文件 V5.1.41
-    const expectedMacValue =
-      "63851C8A4BE523C832C8742BFB0311F3C7646BEB29F235616BBD20C8677E2F1F";
-    const result = generateCheckMacValue(mockData, TestHashKey, TestHashIV);
+    // 用官方 SDK 當作正確答案 (對齊實際運算邏輯)
+    const sdkHelper = new APIHelper({
+      OperationMode: "Test",
+      MercProfile: {
+        MerchantID: "2000132",
+        HashKey: TestHashKey,
+        HashIV: TestHashIV,
+      },
+      IgnorePayment: [],
+      IsProjectContractor: false,
+    });
+    // 叫官方 SDK 算出一組簽章字串。
+    const expectedMacValue = sdkHelper.gen_chk_mac_value(mockData);
+    //親手寫的邏輯。
 
+    const result = generateCheckMacValue(mockData, TestHashKey, TestHashIV);
+    // 最關鍵的一行：斷言 (Assertion)。
     expect(result).toBe(expectedMacValue);
   });
 
-  test("verifyCheckMacValue 應該能正確驗證 Webhook 資料", () => {
-    // 模擬綠界回傳的 Payload
-    const callbackData = {
-      RtnCode: "1",
-      RtnMsg: "Succeeded",
+  test("verifyCheckMacValue 能通過合法 Webhook 簽章", () => {
+    const payload = {
       MerchantID: "2000132",
       MerchantTradeNo: "Test1234",
-      TotalAmount: "1000",
+      StoreID: "",
+      RtnCode: "1",
+      RtnMsg: "Succeeded",
+      TradeNo: "2013121212121212",
+      TradeAmt: "1000",
       PaymentDate: "2013/03/12 15:30:23",
-      // 把上面正確的答案放進來當作收到的簽章
-      CheckMacValue:
-        "E037989354F9190D4D388E4301D38A3D06341270560706599026210A26F3A523",
+      PaymentType: "Credit_CreditCard",
+      PaymentTypeChargeFee: "0",
+      TradeDate: "2013/03/12 15:30:23",
+      SimulatePaid: "0",
+      CustomField1: "",
+      CustomField2: "",
+      CustomField3: "",
+      CustomField4: "",
     };
 
-    // 注意：因為上面的 callbackData 跟第一個 test 的資料不同，
-    // 這裡的 CheckMacValue 我是隨便打個比方，
-    // 實際測試時，你要確保 verify 算出來的跟 generate 算出來的一樣。
-
-    // 我們做一個簡單的驗證測試：自己產生的自己驗證
-    const myData = { Amount: 100, OrderId: "A001" };
-    const signature = generateCheckMacValue(myData, TestHashKey, TestHashIV);
-
-    const payloadFromEcpay = { ...myData, CheckMacValue: signature };
-
+    const sdkHelper = new APIHelper({
+      OperationMode: "Test",
+      MercProfile: {
+        MerchantID: "2000132",
+        HashKey: TestHashKey,
+        HashIV: TestHashIV,
+      },
+      IgnorePayment: [],
+      IsProjectContractor: false,
+    });
+    const checkMacValue = sdkHelper.gen_chk_mac_value(payload);
     const isValid = verifyCheckMacValue(
-      payloadFromEcpay,
+      { ...payload, CheckMacValue: checkMacValue },
       TestHashKey,
       TestHashIV
     );
     expect(isValid).toBe(true);
   });
 
-  test("當簽章被竄改時，驗證應該失敗", () => {
-    const myData = { Amount: 100, OrderId: "A001" };
-    const signature = generateCheckMacValue(myData, TestHashKey, TestHashIV);
+  test("verifyCheckMacValue 偵測到簽章被竄改", () => {
+    //做一份payload
+    const payload = {
+      MerchantID: "2000132",
+      MerchantTradeNo: "Test1234",
+      StoreID: "",
+      RtnCode: "1",
+      RtnMsg: "Succeeded",
+      TradeNo: "2013121212121212",
+      TradeAmt: "1000",
+      PaymentDate: "2013/03/12 15:30:23",
+      PaymentType: "Credit_CreditCard",
+      PaymentTypeChargeFee: "0",
+      TradeDate: "2013/03/12 15:30:23",
+      SimulatePaid: "0",
+      CustomField1: "",
+      CustomField2: "",
+      CustomField3: "",
+      CustomField4: "",
+    };
 
-    // 駭客把金額改成 1 元，但用原本的簽章
-    const hackedPayload = { ...myData, Amount: 1, CheckMacValue: signature };
-
-    const isValid = verifyCheckMacValue(hackedPayload, TestHashKey, TestHashIV);
+    //綠界 官方SDK Helper算出正確簽章，模擬綠界會給的 CheckMacValue
+    const sdkHelper = new APIHelper({
+      OperationMode: "Test",
+      MercProfile: {
+        MerchantID: "2000132",
+        HashKey: TestHashKey,
+        HashIV: TestHashIV,
+      },
+      IgnorePayment: [],
+      IsProjectContractor: false,
+    });
+    const checkMacValue = sdkHelper.gen_chk_mac_value(payload);
+    //竄改金額
+    const tampered = { ...payload, TradeAmt: "1" };
+    const isValid = verifyCheckMacValue(
+      { ...tampered, CheckMacValue: checkMacValue },
+      TestHashKey,
+      TestHashIV
+    );
     expect(isValid).toBe(false);
   });
 });
