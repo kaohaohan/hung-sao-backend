@@ -102,57 +102,7 @@ sequenceDiagram
     end
 ```
 
-## 🧭 系統工作流程
 
-```mermaid
-flowchart TB
-    classDef user fill:#E1F5FE,stroke:#0277BD,stroke-width:2px;
-    classDef admin fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px;
-    classDef system fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px;
-    classDef data fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px;
-    classDef ext fill:#FAFAFA,stroke:#616161,stroke-width:2px,stroke-dasharray: 5 5;
-
-    Customer((Customer)):::user
-    Admin((Admin)):::admin
-    FE[Frontend (Next.js)]:::system
-
-    subgraph Backend[Express API]
-        BE[API Routes]:::system
-        Auth[Auth Middleware<br/>Firebase Token + ADMIN_UIDS]:::system
-
-        OrderCtrl[Order Controller]:::system
-        PaymentCtrl[Payment Controller]:::system
-        ProductCtrl[Product Controller]:::system
-        AdminCtrl[Admin Controller]:::system
-
-        OrderSvc[Order Service]:::system
-        PaymentSvc[ECPay Service]:::system
-        LogisticsSvc[Logistics Service]:::system
-        ProductSvc[Product Service]:::system
-        AISvc[AI Agent Service]:::system
-    end
-
-    DB[(MongoDB Atlas)]:::data
-
-    ECPay[(ECPay Payment Gateway)]:::ext
-    TCAT[(Black Cat / TCAT API)]:::ext
-    Gemini[(Google Gemini API)]:::ext
-
-    Customer --> FE
-    FE -->|POST /api/orders| BE
-    BE --> OrderCtrl --> OrderSvc --> DB
-    OrderCtrl -->|HTML Form| PaymentSvc --> ECPay
-    ECPay -.->|Webhook /api/orders/payment-notify| PaymentCtrl --> OrderSvc --> DB
-
-    FE -->|GET /api/products| BE
-    BE --> ProductCtrl --> ProductSvc --> DB
-
-    Admin --> FE -->|/api/admin/*| BE --> Auth --> AdminCtrl
-    AdminCtrl -->|Orders| OrderSvc --> DB
-    AdminCtrl -->|Products| ProductSvc --> DB
-    AdminCtrl -->|Ship/Label/Sync| LogisticsSvc --> TCAT
-    AdminCtrl -->|Ask AI| AISvc --> DB --> Gemini
-```
 
 ## 🚀 部署與金流回傳 (High-Level)
 
