@@ -2,10 +2,14 @@ const ecpayService = require("../services/ecpayService");
 const orderService = require("../services/orderService");
 const { calculateServerShipping } = require("../utils/shippingCalculator");
 const { sendError } = require("../utils/response");
+const { randomUUID } = require("crypto");
+const { redis } = require("../queue/redis");
+const { orderQueue } = require("../queue/orderQueue");
+const { Order } = require("../models/Order");
 
 async function createOrder(req, res) {
   try {
-    // 1. 接收前端資料（items, customerInfo...其他的）
+    // 1. 拿req.body（items, customerInfo...其他的）
     const {
       items,
       customerInfo,
@@ -39,14 +43,14 @@ async function createOrder(req, res) {
     // 商品總金額 (純商品)
     const subtotal = itemsWithSubtotal.reduce(
       (sum, item) => sum + item.subtotal,
-      0
+      0,
     );
 
     // 3. 計算運費 (Shipping Fee)
     // 建議傳入 shippingMethod 變數，保持彈性
     const shippingFee = calculateServerShipping(
       items,
-      shippingMethod || "HOME_COOL"
+      shippingMethod || "HOME_COOL",
     );
     console.log(`💰 試算結果: 商品 $${subtotal} + 運費 $${shippingFee}`);
     // 4. 計算總金額 (Total Amount) 貨到付款加收30塊手續費
@@ -54,8 +58,9 @@ async function createOrder(req, res) {
     const isCOD = paymentMethod === "COD";
     const totalAmount = subtotal + shippingFee + (isCOD ? COD_FEE : 0);
 
-    // 5. 產生訂單編號
-    const orderId = "ORD" + Date.now();
+    // 5. 產生訂單編號 (randomUID 避免高併發撞號)
+    const orderId = `ORD-${randomUUID().slice(0, 8)}`;
+
     //修正 1: 定義 logisticsOptions 物件
     const logisticsOptions = {
       type: "HOME",
@@ -64,7 +69,7 @@ async function createOrder(req, res) {
       deliveryTime: deliveryTime || "anytime", // 存入客人選的時段
     };
 
-    // 4. 準備訂單數據
+    // 4. 準備 orderData要的資料
     const orderData = {
       orderId,
       subtotal: subtotal, // 商品小計
@@ -83,14 +88,70 @@ async function createOrder(req, res) {
 
       // 儲存使用者在下單時選的付款方式（CREDIT_CARD / COD）
       paymentMethod: paymentMethod || null,
-
       // paymentInfo 等綠界付款成功後，webhook 才會填入
       // 不要在這裡先填，因為用戶還沒真正付款
     };
 
-    // 6. 存入 MongoDB
-    const savedOrder = await orderService.createOrderWithStock(orderData);
-    console.log(" 訂單已存入資料庫:", savedOrder.orderId);
+    const safetyBuffer = Number(process.env.SAFETY_BUFFER || 0);
+    const reserved = [];
+    for (const item of orderData.items) {
+      const key = `stock:${item.itemId}`;
+      const qty = item.quantity;
+      //資料完整性永遠都要一樣
+      const remaining = await redis.decrby(key, qty);
+
+      //檢查 剩下的庫存
+      if (remaining < safetyBuffer) {
+        // 先把這次扣的加回去
+        await redis.incrby(key, qty);
+        // 再把前面成功扣的全部加回去
+        for (const r of reserved) {
+          await redis.incrby(r.key, r.qty);
+        }
+        return res.status(409).json({ error: "庫存不足" });
+      }
+      //// 這個 item 預扣成功 像是 stock:mutton_stew = 29
+      reserved.push({ key, qty });
+    }
+    // Step 1: 先建立訂單（狀態 queued）
+    let order;
+    try {
+      order = await Order.create({
+        ...orderData,
+        orderStatus: "queued",
+      });
+    } catch (e) {
+      // Order.create 失敗 → 把 Redis 庫存加(incrby)回去
+      for (const r of reserved) await redis.incrby(r.key, r.qty);
+      throw e;
+    }
+    // Step 2: 再入隊
+    try {
+      await orderQueue.add("createOrderJob", orderData);
+    } catch (e) {
+      for (const r of reserved) await redis.incrby(r.key, r.qty);
+      // queue 失敗：把 queued 訂單標記 failed（避免卡 queued）
+      await Order.updateOne(
+        { orderId: orderData.orderId },
+        { $set: { orderStatus: "failed" } },
+      );
+      throw e;
+    }
+    // Step 3: 回應 202
+    console.log("reserved:", reserved);
+    console.log("enqueue orderId:", orderData.orderId);
+
+    return res.status(202).json({
+      status: "queued",
+      orderId: orderData.orderId,
+      amount: orderData.amount,
+    });
+
+    // // 6. 存入 MongoDB
+    // const savedOrder = await orderService.createOrderWithStock(orderData);
+    // console.log(" 訂單已存入資料庫:", savedOrder.orderId);
+
+    //改成Radis 預扣庫存 + Queue排隊 API快速回應 202 queued 後面由我們啟動好的worker 去寫入db
 
     // 6. 分流：信用卡 vs 貨到付款
     if (paymentMethod === "COD") {
@@ -121,6 +182,15 @@ async function createOrder(req, res) {
       res.send(html);
     }
   } catch (error) {
+    console.error(
+      "createOrder error:",
+      error?.name,
+      error?.code,
+      error?.message,
+    );
+    if (error.code === "BUSY" || error.message === "BUSY") {
+      return res.status(503).json({ error: "系統忙碌，請稍後再試" });
+    }
     if (error.message === "庫存不足") {
       return res.status(409).json({ error: "庫存不足" });
     }
@@ -148,7 +218,9 @@ async function getOrderById(req, res) {
 }
 
 function buildMerchantTradeNo(orderId) {
-  const tail = String(orderId).replace(/[^A-Za-z0-9]/g, "").slice(-6);
+  const tail = String(orderId)
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(-6);
   const suffix = String(Date.now()).slice(-10);
   return `RT${tail}${suffix}`;
 }
@@ -178,16 +250,12 @@ async function retryPayment(req, res) {
       return res.status(400).json({ error: "訂單已付款，無需重新付款" });
     }
     if (error.message === "ORDER_COD") {
-      return res
-        .status(400)
-        .json({ error: "貨到付款無需重新付款" });
+      return res.status(400).json({ error: "貨到付款無需重新付款" });
     }
     if (error.message === "庫存不足") {
       return res.status(409).json({ error: "庫存不足，無法重新付款" });
     }
-    return res
-      .status(500)
-      .json({ error: "重新付款失敗: " + error.message });
+    return res.status(500).json({ error: "重新付款失敗: " + error.message });
   }
 }
 

@@ -10,6 +10,11 @@ const orderSchema = new mongoose.Schema({
     required: true,
     unique: true, // 例如: ORD1734928374
   },
+  orderStatus: {
+    type: String,
+    enum: ["queued", "processing", "done", "failed"],
+    default: "queued",
+  },
 
   // ==========================================
   // 2. 金額計算 (Accounting) - 你的帳本
@@ -169,7 +174,7 @@ orderSchema.pre("save", function (next) {
       // B. 計算商品總小計 (Subtotal)
       const itemTotal = this.items.reduce(
         (sum, item) => sum + (item.subtotal || 0),
-        0
+        0,
       );
       this.subtotal = itemTotal; // 存入資料庫，方便以後查帳
 
