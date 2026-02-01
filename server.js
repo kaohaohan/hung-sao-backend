@@ -34,10 +34,12 @@ const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const productRoutes = require("./routes/productRoutes");
+const monitorRoutes = require("./routes/monitorRoutes");
 
 app.use(orderRoutes);
 app.use(paymentRoutes);
 app.use(productRoutes);
+app.use(monitorRoutes);
 //進到middleware先處理
 app.use("/api/admin", checkAuth, adminRoutes);
 
@@ -52,8 +54,8 @@ app.get("/metrics", async (req, res) => {
   }
 });
 
-// 只在非 Vercel 環境下啟動伺服器（本地開發用）
-if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+// Render 需要在 production 也綁定 PORT；只有 Vercel 不需要自行 listen
+if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 8080;
   app.listen(PORT, () => {
     console.log(`🚀 伺服器運行在 http://localhost:${PORT}`);
