@@ -4,6 +4,7 @@ const { Worker } = require("bullmq");
 const { redis } = require("../queue/redis");
 const { Order } = require("../models/Order");
 const { Product } = require("../models/Product");
+const http = require("http");
 
 async function connectMongo() {
   await mongoose.connect(process.env.MONGO_URI);
@@ -12,6 +13,16 @@ async function connectMongo() {
 
 async function startWorker() {
   await connectMongo();
+
+  const port = process.env.PORT || 10000;
+  http
+    .createServer((req, res) => {
+      res.writeHead(200);
+      res.end("worker alive");
+    })
+    .listen(port, () => {
+      console.log(`✅ Worker health server running on ${port}`);
+    });
 
   const worker = new Worker(
     "orderQueue",
